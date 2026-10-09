@@ -274,7 +274,19 @@ function assert(cond, msg) {
   assert(rt.ctx.get('llm') === undefined, 'llm service removed after dispose');
 
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-  assert(pkg.dependencies['@deepseek-ai/dsh'] === '0.2.0-rc.2', 'dsh pin');
+  // AC-8: no umbrella; each imported/mounted subpackage exact-pinned (no ^/~)
+  assert(!Object.prototype.hasOwnProperty.call(pkg.dependencies, '@deepseek-ai/dsh'), 'dsh umbrella must not be listed');
+  const exactPins = {
+    '@deepseek-ai/cordis': '4.0.4',
+    '@deepseek-ai/dsh-credentials': '0.2.0-rc.2',
+    '@deepseek-ai/dsh-llm': '0.2.0-rc.2',
+    '@deepseek-ai/dsh-llm-deepseek-api-key': '0.2.0-rc.2',
+    '@deepseek-ai/schemastery': '3.18.4',
+  };
+  for (const [name, ver] of Object.entries(exactPins)) {
+    assert(pkg.dependencies[name] === ver, name + ' exact pin');
+    assert(!/[~^]/.test(String(pkg.dependencies[name])), name + ' must not use range');
+  }
   assert(pkg.devDependencies.electron === '39.8.10', 'electron pin');
   const lock = fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8');
   assert(!/embedded-agent-kit/.test(lock), 'no embedded-agent-kit');

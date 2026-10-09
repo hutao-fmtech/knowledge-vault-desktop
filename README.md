@@ -32,7 +32,7 @@ MIT (application). Bundled template license: see `resources/template/LICENSE`.
 Default mode (this PR): ask the vault with citations, sort inbox → PARA, make a Zettelkasten card.
 Every write is a **proposed change**; disk updates only after **Apply**. Paths outside the vault, `..`, `.obsidian/`, and `00-系统/` are rejected.
 
-- Engine pin: `@deepseek-ai/dsh@0.2.0-rc.2` (dependency present; default mode never loads tool packages).
+- Engine pins (exact, no umbrella): `@deepseek-ai/cordis@4.0.4`, `@deepseek-ai/dsh-llm@0.2.0-rc.2`, `@deepseek-ai/dsh-llm-deepseek-api-key@0.2.0-rc.2`, `@deepseek-ai/dsh-credentials@0.2.0-rc.2`, `@deepseek-ai/schemastery@3.18.4`. `@deepseek-ai/dsh` is not a dependency; default mode never loads tool packages.
 - Without an API key the UI uses a local mock engine (offline). With a DeepSeek key, model calls go through an in-process Cordis mount of `@deepseek-ai/dsh-llm` + `@deepseek-ai/dsh-llm-deepseek-api-key` (`ctx.llm.stream`, provider `deepseek-official`). No raw `fetch` to the public API.
 - Not in this PR: dsh agent-loop / durable sessions / tool packages. Those need a `dsh` profile + SDK client (advanced-mode PR). Reference source lives outside this repo at `deepseek-ai/deepseek-harness` (local checkout: `/workspace/deepseek-harness`).
 - Key storage: OS `safeStorage` when available, else app config dir — never inside the vault or repo.
