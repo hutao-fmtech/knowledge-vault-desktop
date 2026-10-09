@@ -60,7 +60,7 @@ jobs:
           echo "launching $BIN"
           OUT="$(mktemp)"
           set +e
-          xvfb-run -a "$BIN" --kvd-pack-smoke >"$OUT" 2>&1
+          xvfb-run -a "$BIN" --no-sandbox --kvd-pack-smoke >"$OUT" 2>&1
           CODE=$?
           set -e
           cat "$OUT"
