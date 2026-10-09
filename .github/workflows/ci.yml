@@ -13,13 +13,64 @@ jobs:
     name: smoke
     runs-on: ubuntu-latest
     env:
-      # Smoke test is pure Node (no Electron GUI); skip Electron binary download.
+      # Pure Node smoke; skip Electron binary download for this job.
       ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run smoke
+
+  pack-smoke:
+    name: pack-smoke (asar + Electron Node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y xvfb
+      - run: npm ci
+      - name: electron-builder --dir
+        run: npx electron-builder --dir --linux
+      - name: launch packaged app (xvfb) — Node >=22.12 + ESM smokeMount in asar
+        run: |
+          set -euo pipefail
+          APP_DIR="dist/linux-unpacked"
+          if [ ! -d "$APP_DIR" ]; then
+            echo "missing $APP_DIR" >&2
+            ls -la dist || true
+            exit 1
+          fi
+          BIN="$(find "$APP_DIR" -maxdepth 1 -type f -executable ! -name '*.so' | head -1)"
+          if [ -z "$BIN" ]; then
+            echo "no executable in $APP_DIR" >&2
+            ls -la "$APP_DIR" >&2
+            exit 1
+          fi
+          echo "launching $BIN"
+          OUT="$(mktemp)"
+          set +e
+          xvfb-run -a "$BIN" --kvd-pack-smoke >"$OUT" 2>&1
+          CODE=$?
+          set -e
+          cat "$OUT"
+          if [ "$CODE" -ne 0 ]; then
+            echo "packaged app exited $CODE" >&2
+            exit "$CODE"
+          fi
+          grep -q 'KVD_PACK_SMOKE_OK' "$OUT"
+          NODE_LINE="$(grep 'KVD_NODE_VERSION' "$OUT" | tail -1)"
+          NODE_VER="$(echo "$NODE_LINE" | awk '{print $2}')"
+          echo "packaged process.versions.node=$NODE_VER"
+          node -e "
+            const v=process.argv[1].split('.').map(Number);
+            const ok=v[0]>22||(v[0]===22&&v[1]>=12)||v[0]>=24;
+            if(!ok){console.error('node too old', process.argv[1]); process.exit(1)}
+            console.log('node check ok', process.argv[1]);
+          " "$NODE_VER"
+          grep -q 'KVD_SMOKE_MOUNT' "$OUT"

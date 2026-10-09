@@ -106,13 +106,22 @@ function assert(cond, msg) {
   assert(askRes.ok && askRes.citations.length >= 0, 'ask ok');
 
   
-  // dsh-llm in-process mount (no network): providers must include deepseek-official
+  // dsh-llm in-process mount via composition root (no network)
   const { smokeMount } = require('../src/agent/dsh-runtime');
   const mount = await smokeMount();
   assert(mount.ok && mount.providers.includes('deepseek-official'), 'dsh-llm mount');
 
-const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+  // Composition root dispose (simulates before-quit / will-quit)
+  const { disposeRuntime, wasDisposeCalled, getRuntime } = await import('../src/runtime/boot.mjs');
+  const rt = await getRuntime();
+  assert(rt && rt.ctx, 'runtime ctx');
+  await disposeRuntime();
+  assert(wasDisposeCalled(), 'dispose must be called on quit');
+  assert(rt.ctx.get('llm') === undefined, 'llm service removed after dispose');
+
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
   assert(pkg.dependencies['@deepseek-ai/dsh'] === '0.2.0-rc.2', 'dsh pin');
+  assert(pkg.devDependencies.electron === '39.8.10', 'electron pin');
   const lock = fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8');
   assert(!/embedded-agent-kit/.test(lock), 'no embedded-agent-kit');
 
