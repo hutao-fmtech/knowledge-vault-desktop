@@ -8,6 +8,54 @@ const { createMockEngine, createDeepSeekEngine, listInboxNotes } = require('./ag
 const { applyProposal, discardProposal } = require('./agent/proposals');
 const { saveApiKey, loadApiKey, clearApiKey, hasApiKey, configDir } = require('./agent/keystore');
 
+const PACK_SMOKE = process.argv.includes('--kvd-pack-smoke');
+
+async function runPackSmoke() {
+  const nodeVersion = process.versions.node;
+  console.log('KVD_NODE_VERSION', nodeVersion);
+  const parts = String(nodeVersion).split('.').map((x) => parseInt(x, 10));
+  const okNode =
+    parts[0] > 22 || (parts[0] === 22 && parts[1] >= 12) || parts[0] >= 24;
+  if (!okNode) {
+    console.error('KVD_PACK_SMOKE_FAIL node', nodeVersion, 'need >=22.12');
+    app.exit(2);
+    return;
+  }
+  // ESM dynamic import of runtime + smokeMount from inside asar / unpacked tree.
+  const { smokeMount } = require('./agent/dsh-runtime');
+  const mount = await smokeMount();
+  if (!mount.ok || !mount.providers.includes('deepseek-official')) {
+    console.error('KVD_PACK_SMOKE_FAIL mount', mount);
+    app.exit(3);
+    return;
+  }
+  console.log('KVD_SMOKE_MOUNT', JSON.stringify(mount));
+  const { disposeRuntime, wasDisposeCalled } = await import('./runtime/boot.mjs');
+  await disposeRuntime();
+  if (!wasDisposeCalled()) {
+    console.error('KVD_PACK_SMOKE_FAIL dispose not called');
+    app.exit(4);
+    return;
+  }
+  console.log('KVD_PACK_SMOKE_OK', nodeVersion);
+  app.exit(0);
+}
+
+if (PACK_SMOKE) {
+  app
+    .whenReady()
+    .then(runPackSmoke)
+    .catch((err) => {
+      console.error('KVD_PACK_SMOKE_FAIL', err && err.message ? err.message : err);
+      app.exit(1);
+    });
+} else {
+  // Register Cordis dispose on quit (composition root lifecycle).
+  import('./runtime/boot.mjs')
+    .then(({ registerElectronQuitHooks }) => registerElectronQuitHooks(app))
+    .catch(() => {});
+}
+
 const TEMPLATE_ROOT = path.join(__dirname, '..', 'resources', 'template');
 const PREFS_FILE = () => path.join(configDir(), 'prefs.json');
 
@@ -59,16 +107,20 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
-  createWindow();
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+if (!PACK_SMOKE) {
+  app.whenReady().then(() => {
+    createWindow();
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
   });
-});
+}
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+if (!PACK_SMOKE) {
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit();
+  });
+}
 
 ipcMain.handle('sanitize-name', (_e, raw) => sanitizeVaultName(raw));
 

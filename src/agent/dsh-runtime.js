@@ -1,47 +1,31 @@
 'use strict';
 
 /**
- * In-process DeepSeek Harness LLM runtime (default / model-only mode).
+ * Default / model-only DeepSeek Harness LLM access.
  *
- * Boots Cordis with:
- *   - @deepseek-ai/dsh-llm
- *   - @deepseek-ai/dsh-llm-deepseek-api-key
- *
- * This is the supported path for a single model call (`ctx.llm.stream`).
- * It does NOT mount agent-loop, sessions, or any tool packages (bash / fs / web).
- * Those belong to advanced mode via `dsh --profile …` + SDK client / sandbox.
+ * Obtains the shared Cordis Context from `src/runtime/` (composition root).
+ * Does NOT create its own Context. Plugin rows live in composition.mjs.
  *
  * Reference checkout (not vendored into this repo):
  *   /workspace/deepseek-harness  (= github.com/deepseek-ai/deepseek-harness)
  */
 
 /** @type {Promise<{ ctx: any, BlockAssembler: any, createSystemMessage: Function, createUserMessage: Function }> | null} */
-let bootPromise = null;
+let helpersPromise = null;
 
 async function boot() {
-  if (bootPromise) return bootPromise;
-  bootPromise = (async () => {
-    const { Context } = await import('@deepseek-ai/cordis');
+  if (helpersPromise) return helpersPromise;
+  helpersPromise = (async () => {
+    const { getRuntime } = await import('../runtime/boot.mjs');
+    const { ctx } = await getRuntime();
     const llmMod = await import('@deepseek-ai/dsh-llm');
-    const DeepSeekApiKey = await import('@deepseek-ai/dsh-llm-deepseek-api-key');
-    const LlmRuntime = llmMod.default;
     const { BlockAssembler, createSystemMessage, createUserMessage } = llmMod;
-
-    const ctx = new Context();
-    await ctx.plugin(LlmRuntime);
-    await ctx.plugin(DeepSeekApiKey, { apiKeyEnv: 'DEEPSEEK_API_KEY' });
-
-    const providers = ctx.llm.listProviders().map((p) => p.id);
-    if (!providers.includes('deepseek-official')) {
-      throw new Error(`dsh-llm mount failed: expected deepseek-official, got ${providers.join(',')}`);
-    }
-
     return { ctx, BlockAssembler, createSystemMessage, createUserMessage };
   })();
   try {
-    return await bootPromise;
+    return await helpersPromise;
   } catch (err) {
-    bootPromise = null;
+    helpersPromise = null;
     throw err;
   }
 }
