@@ -150,6 +150,13 @@ function createDeepSeekEngine(getApiKey) {
           const m = streamed.text.match(/0[2-5]-[\u4e00-\u9fffA-Za-z]+/);
           if (m) destDir = m[0];
           reason = streamed.text.slice(0, 200);
+        } else if (
+          streamed.code === 'PRIVACY_REQUIRED' ||
+          streamed.needPrivacy ||
+          /隐私/.test(String(streamed.error || ''))
+        ) {
+          // Fail closed when the model path is gated (G1); do not silently heuristic.
+          return streamed;
         }
       }
       if (destDir === '02-项目') destDir = '02-项目/个人项目';

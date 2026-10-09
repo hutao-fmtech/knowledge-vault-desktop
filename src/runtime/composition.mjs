@@ -15,6 +15,11 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 /** @type {PluginRow[]} */
 export const DEFAULT_ROWS = [
   {
+    id: 'kvd-prefs',
+    name: 'kvd-prefs',
+    module: './plugins/kvd-prefs.mjs',
+  },
+  {
     id: 'kvd-keychain',
     name: 'kvd-keychain',
     module: './plugins/kvd-keychain.mjs',
@@ -23,6 +28,11 @@ export const DEFAULT_ROWS = [
     id: 'dsh-llm',
     name: 'dsh-llm',
     module: '@deepseek-ai/dsh-llm',
+  },
+  {
+    id: 'kvd-privacy',
+    name: 'kvd-privacy',
+    module: './plugins/kvd-privacy.mjs',
   },
   {
     id: 'dsh-llm-deepseek-api-key',
