@@ -38,8 +38,20 @@
     "mac": {
       "category": "public.app-category.productivity",
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "identity": null
     },
@@ -72,7 +84,8 @@
       ],
       "category": "Office"
     },
-    "forceCodeSigning": false
+    "forceCodeSigning": false,
+    "publish": null
   },
   "devDependencies": {
     "electron": "^33.2.0",

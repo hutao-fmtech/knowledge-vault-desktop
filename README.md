@@ -28,13 +28,11 @@ MIT (application). Bundled template license: see `resources/template/LICENSE`.
 
 ## Packaging
 
-M1 targets **macOS + Windows** local installers (`electron-builder`).
+M1 ships **unsigned** internal-test installers for **Windows + macOS** via GitHub Actions (`.github/workflows/release.yml`):
 
-```bash
-npm run dist:win   # NSIS + portable (needs wine on Linux)
-npm run dist:mac   # dmg/zip (needs macOS host)
-```
+- Push a tag `vX.Y.Z` → smoke → build on `windows-latest` (NSIS + portable) and `macos-latest` (dmg/zip, arm64 + x64) → assets uploaded to a GitHub pre-release.
+- Or run the workflow manually (Actions → Release) to just produce downloadable artifacts.
 
-On this Linux box without wine/root: `dist/win-unpacked/` is produced, and
-`dist/Knowledge Vault-0.1.0-win-x64-portable.zip` is a zip of that folder.
-NSIS `.exe` installer and macOS `.dmg` need wine or a macOS/Windows runner.
+Local builds: `npm run dist:win` (Windows host, or Linux + wine), `npm run dist:mac` (macOS host). `dist/` is git-ignored.
+
+macOS first launch of an unsigned build: right-click the app → **Open**.
