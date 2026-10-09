@@ -18,7 +18,7 @@ Knowledge Vault Desktop (kvd) is an **in-process Cordis composition** hosted ins
 ## Consequences
 
 - App owns boot / dispose (`before-quit` / `will-quit`); Context is not a lazy singleton forever.
-- Direct dependencies pin every package we `import` / mount (`@deepseek-ai/cordis`, `dsh-llm`, `dsh-llm-deepseek-api-key`, `dsh-credentials`, …). The `@deepseek-ai/dsh` umbrella remains pinned for AC-8 until the owner agrees to retarget that assertion (review R4).
+- Direct dependencies pin every package we `import` / mount (`@deepseek-ai/cordis`, `dsh-llm`, `dsh-llm-deepseek-api-key`, `dsh-credentials`, `schemastery`, …) as **exact versions** (no `^`/`~`). The `@deepseek-ai/dsh` umbrella is **not** a dependency; AC-8 asserts its absence and the exact pins of the used subpackages (owner decision).
 - Upgrading dsh is a deliberate release (exact pins), not a floating range — same spirit as dsh Desktop “release identity”.
 - Advanced mode (tools / approval / sandbox) will still be a **plugin group fiber** on this composition, not `--profile sdk` (SDK profile has no approval responder).
 
