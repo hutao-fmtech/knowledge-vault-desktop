@@ -1,0 +1,81 @@
+{
+  "name": "knowledge-vault-desktop",
+  "version": "0.1.0",
+  "description": "Knowledge Vault Desktop — one-click Obsidian-compatible PARA/MOC/Zettelkasten vault creator",
+  "main": "src/main.js",
+  "author": "hutao-fmtech",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "smoke": "node scripts/smoke-create.js",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux",
+    "dist:win:portable": "electron-builder --win --dir && node scripts/zip-win-portable.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "build": {
+    "appId": "com.hutao.knowledgevault",
+    "productName": "Knowledge Vault",
+    "copyright": "Copyright © hutao-fmtech",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "resources/template/**/*",
+      "package.json"
+    ],
+    "extraResources": [],
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "identity": null
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Office"
+    },
+    "forceCodeSigning": false
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  }
+}

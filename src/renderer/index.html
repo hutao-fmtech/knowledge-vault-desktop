@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Knowledge Vault Desktop</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="hero">
+      <h1>Knowledge Vault</h1>
+      <p class="sub">一键创建 Obsidian 兼容个人知识库（PARA · MOC · Zettelkasten）</p>
+    </header>
+
+    <section id="view-welcome" class="card">
+      <h2>欢迎</h2>
+      <p class="muted">离线内置模板，选目录、起名字即可落地可用 Vault。界面仅成功页 + 骨架预览，不是完整编辑器。</p>
+      <ul id="template-labels" class="label-list"></ul>
+      <button type="button" id="btn-start" class="primary">创建新知识库</button>
+      <p class="foot-inline">模板 pin <code>a3320825e59e</code> · 不含 Agent / dsh / kit</p>
+    </section>
+
+    <section id="view-create" class="card hidden">
+      <h2>创建新知识库</h2>
+      <label class="field">
+        <span>父目录</span>
+        <div class="row">
+          <input id="input-parent" type="text" readonly placeholder="选择本地文件夹…" />
+          <button type="button" id="btn-pick" class="secondary">选择…</button>
+        </div>
+      </label>
+      <label class="field">
+        <span>知识库名称</span>
+        <input id="input-name" type="text" placeholder="例如 My_Notes（空格会变成 _）" maxlength="80" />
+        <small id="name-hint" class="hint">文件夹名预览：—</small>
+      </label>
+      <p class="path-line"><strong>将创建到</strong> <code id="path-preview">—</code></p>
+      <p id="form-error" class="error hidden"></p>
+      <div class="actions">
+        <button type="button" id="btn-back" class="secondary">返回</button>
+        <button type="button" id="btn-create" class="primary">创建知识库</button>
+      </div>
+    </section>
+
+    <section id="view-success" class="card hidden">
+      <h2 id="success-title">创建成功</h2>
+      <p class="ok">知识库已落地，可用 Obsidian「打开文件夹」使用。</p>
+      <p class="path-line"><strong>路径</strong> <code id="success-path"></code></p>
+      <div class="actions">
+        <button type="button" id="btn-reveal" class="secondary">打开所在文件夹</button>
+        <button type="button" id="btn-another" class="primary">再创建一个</button>
+      </div>
+      <h3>骨架预览</h3>
+      <pre id="success-tree" class="tree-pre"></pre>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

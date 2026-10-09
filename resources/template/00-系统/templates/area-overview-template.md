@@ -1,0 +1,133 @@
+---
+title: "{{title}}"
+type: "Area Note"
+created: <% tp.date.now("YYYY-MM-DD") %>
+updated: <% tp.date.now("YYYY-MM-DD") %>
+tags: [领域总览]
+status: draft # 文档成熟度：draft / stable / deprecated；不能据此推断业务状态
+area: # 本领域的规范名称，关联项目使用相同值
+health: # healthy / attention / at_risk；未评估时留空，不能从 status 推断
+---
+
+# 🎯 {{title}}
+
+## 📖 领域定义
+
+**这个领域是什么？**
+
+
+**为什么重要？**
+
+
+**我的期望是什么？**
+
+
+## 📊 关键指标
+
+| 指标 | 当前值 | 目标值 | 状态 | 更新时间 |
+|------|--------|--------|------|----------|
+|      |        |        | 🟢/🟡/🔴 | <% tp.date.now("YYYY-MM-DD") %> |
+|      |        |        | 🟢/🟡/🔴 | <% tp.date.now("YYYY-MM-DD") %> |
+|      |        |        | 🟢/🟡/🔴 | <% tp.date.now("YYYY-MM-DD") %> |
+
+**健康度**: 🟢 健康 / 🟡 需关注 / 🔴 有风险
+
+## 🎯 长期目标
+
+### 1年目标
+
+
+### 3年目标
+
+
+### 5年目标
+
+
+## 📅 日常习惯
+
+### 每日习惯
+- [ ]
+- [ ]
+- [ ]
+
+### 每周习惯
+- [ ]
+- [ ]
+- [ ]
+
+### 每月习惯
+- [ ]
+- [ ]
+
+## 📚 相关资源
+
+### 工具与方法
+
+
+### 学习资料
+
+
+### 关键人物
+
+
+## 📂 关联项目
+
+```dataview
+TABLE project_status as "项目状态", priority, start_date
+FROM "02-项目"
+WHERE this.area AND area = this.area
+SORT project_status ASC, priority DESC
+```
+
+## 📝 学习笔记
+
+### 重要概念
+
+
+### 最佳实践
+
+
+### 经验教训
+
+
+## 🔄 反思与改进
+
+### 更新记录（新到旧，标注日期与类型）
+
+#### <% tp.date.now("YYYY-MM-DD") %>
+- **决策**：{{做了什么判断/选择，为什么}}
+- **进展**：{{发生了什么变化}}
+
+
+### 待改进事项
+
+1. **[改进项1]**
+   - 现状:
+   - 目标:
+   - 行动:
+
+2. **[改进项2]**
+   - 现状:
+   - 目标:
+   - 行动:
+
+### 下阶段重点
+
+
+## 📅 回顾历史
+
+### 季度回顾
+
+#### <% tp.date.now("YYYY-[Q]Q") %>
+
+
+### 年度回顾
+
+#### <% tp.date.now("YYYY") %>
+
+
+---
+
+**创建时间**: <% tp.date.now("YYYY-MM-DD") %>
+**最后更新**: <% tp.date.now("YYYY-MM-DD") %>
+**健康度**: 待评估（填写 `health` 后更新；不能从 `status` 推断）
