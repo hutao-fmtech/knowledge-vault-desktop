@@ -8,54 +8,110 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <main class="app">
-    <header class="hero">
-      <h1>Knowledge Vault</h1>
-      <p class="sub">一键创建 Obsidian 兼容个人知识库（PARA · MOC · Zettelkasten）</p>
-    </header>
+  <div id="shell" class="shell">
+    <main class="app" id="main-pane">
+      <header class="hero">
+        <h1>Knowledge Vault</h1>
+        <p class="sub">一键创建 Obsidian 兼容个人知识库 · Agent 侧栏（默认档：只调模型）</p>
+      </header>
 
-    <section id="view-welcome" class="card">
-      <h2>欢迎</h2>
-      <p class="muted">离线内置模板，选目录、起名字即可落地可用 Vault。界面仅成功页 + 骨架预览，不是完整编辑器。</p>
-      <ul id="template-labels" class="label-list"></ul>
-      <button type="button" id="btn-start" class="primary">创建新知识库</button>
-      <p class="foot-inline">模板 pin <code>a3320825e59e</code> · 不含 Agent / dsh / kit</p>
-    </section>
-
-    <section id="view-create" class="card hidden">
-      <h2>创建新知识库</h2>
-      <label class="field">
-        <span>父目录</span>
-        <div class="row">
-          <input id="input-parent" type="text" readonly placeholder="选择本地文件夹…" />
-          <button type="button" id="btn-pick" class="secondary">选择…</button>
+      <section id="view-welcome" class="card">
+        <h2>欢迎</h2>
+        <p class="muted">离线内置模板创建 Vault；创建后可打开 Agent 侧栏做问答 / 收件箱归类 / 生成卡片。所有写盘需 Apply 确认。</p>
+        <ul id="template-labels" class="label-list"></ul>
+        <div class="actions">
+          <button type="button" id="btn-start" class="primary">创建新知识库</button>
+          <button type="button" id="btn-open-existing" class="secondary">打开已有知识库</button>
         </div>
-      </label>
-      <label class="field">
-        <span>知识库名称</span>
-        <input id="input-name" type="text" placeholder="例如 My_Notes（空格会变成 _）" maxlength="80" />
-        <small id="name-hint" class="hint">文件夹名预览：—</small>
-      </label>
-      <p class="path-line"><strong>将创建到</strong> <code id="path-preview">—</code></p>
-      <p id="form-error" class="error hidden"></p>
-      <div class="actions">
-        <button type="button" id="btn-back" class="secondary">返回</button>
-        <button type="button" id="btn-create" class="primary">创建知识库</button>
-      </div>
-    </section>
+        <p class="foot-inline">模板 pin <code>a3320825e59e</code> · dsh <code>0.2.0-rc.2</code>（默认档不挂工具）</p>
+      </section>
 
-    <section id="view-success" class="card hidden">
-      <h2 id="success-title">创建成功</h2>
-      <p class="ok">知识库已落地，可用 Obsidian「打开文件夹」使用。</p>
-      <p class="path-line"><strong>路径</strong> <code id="success-path"></code></p>
-      <div class="actions">
-        <button type="button" id="btn-reveal" class="secondary">打开所在文件夹</button>
-        <button type="button" id="btn-another" class="primary">再创建一个</button>
+      <section id="view-create" class="card hidden">
+        <h2>创建新知识库</h2>
+        <label class="field">
+          <span>父目录</span>
+          <div class="row">
+            <input id="input-parent" type="text" readonly placeholder="选择本地文件夹…" />
+            <button type="button" id="btn-pick" class="secondary">选择…</button>
+          </div>
+        </label>
+        <label class="field">
+          <span>知识库名称</span>
+          <input id="input-name" type="text" placeholder="例如 My_Notes（空格会变成 _）" maxlength="80" />
+          <small id="name-hint" class="hint">文件夹名预览：—</small>
+        </label>
+        <p class="path-line"><strong>将创建到</strong> <code id="path-preview">—</code></p>
+        <p id="form-error" class="error hidden"></p>
+        <div class="actions">
+          <button type="button" id="btn-back" class="secondary">返回</button>
+          <button type="button" id="btn-create" class="primary">创建知识库</button>
+        </div>
+      </section>
+
+      <section id="view-success" class="card hidden">
+        <h2 id="success-title">创建成功</h2>
+        <p class="ok">知识库已落地，可用 Obsidian「打开文件夹」使用。</p>
+        <p class="path-line"><strong>路径</strong> <code id="success-path"></code></p>
+        <div class="actions">
+          <button type="button" id="btn-reveal" class="secondary">打开所在文件夹</button>
+          <button type="button" id="btn-open-agent" class="primary">打开 Agent 侧栏</button>
+          <button type="button" id="btn-another" class="secondary">再创建一个</button>
+        </div>
+        <h3>骨架预览</h3>
+        <pre id="success-tree" class="tree-pre"></pre>
+      </section>
+    </main>
+
+    <aside id="agent-sidebar" class="agent-sidebar hidden" aria-label="Agent 侧栏">
+      <div class="agent-head">
+        <h2>Agent</h2>
+        <span id="agent-badge" class="badge">默认档</span>
+        <button type="button" id="btn-close-agent" class="icon-btn" title="关闭">×</button>
       </div>
-      <h3>骨架预览</h3>
-      <pre id="success-tree" class="tree-pre"></pre>
-    </section>
-  </main>
+      <p id="agent-vault" class="agent-vault muted">未打开 vault</p>
+
+      <div id="agent-privacy" class="agent-block hidden">
+        <h3>隐私说明</h3>
+        <p class="muted">使用 Agent 时，相关笔记片段会发送给 DeepSeek 模型服务。创建知识库本身仍不需要 key、不联网。</p>
+        <button type="button" id="btn-accept-privacy" class="primary">我了解并继续</button>
+      </div>
+
+      <div id="agent-key-panel" class="agent-block">
+        <h3>连接 API Key</h3>
+        <p id="agent-key-state" class="muted">未配置 key 时使用本地模拟引擎（不联网），仍可预览拟改动。</p>
+        <input id="input-api-key" type="password" placeholder="DeepSeek API Key" autocomplete="off" />
+        <div class="actions">
+          <button type="button" id="btn-save-key" class="primary">保存到本地钥匙串/配置</button>
+          <button type="button" id="btn-clear-key" class="secondary">清除</button>
+        </div>
+      </div>
+
+      <div class="agent-block">
+        <h3>问知识库</h3>
+        <textarea id="input-ask" rows="3" placeholder="例如：项目想法有哪些？"></textarea>
+        <button type="button" id="btn-ask" class="primary">提问</button>
+      </div>
+
+      <div class="agent-block">
+        <h3>收件箱</h3>
+        <select id="select-inbox"></select>
+        <div class="actions">
+          <button type="button" id="btn-sort" class="secondary">归类到 PARA</button>
+          <button type="button" id="btn-card" class="secondary">生成卡片</button>
+        </div>
+      </div>
+
+      <div class="agent-block">
+        <h3>回复</h3>
+        <pre id="agent-answer" class="agent-answer">尚未提问。</pre>
+      </div>
+
+      <div class="agent-block">
+        <h3>拟改动（Apply 后才落盘）</h3>
+        <div id="proposal-list" class="proposal-list"></div>
+      </div>
+    </aside>
+  </div>
   <script src="app.js"></script>
 </body>
 </html>

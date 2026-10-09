@@ -9,13 +9,15 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
-    "smoke": "node scripts/smoke-create.js",
+    "smoke": "node scripts/smoke-create.js && node scripts/smoke-agent-write.js",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
     "dist:linux": "electron-builder --linux",
-    "dist:win:portable": "electron-builder --win --dir && node scripts/zip-win-portable.js"
+    "dist:win:portable": "electron-builder --win --dir && node scripts/zip-win-portable.js",
+    "smoke:create": "node scripts/smoke-create.js",
+    "smoke:agent": "node scripts/smoke-agent-write.js"
   },
   "engines": {
     "node": ">=18"
@@ -90,5 +92,8 @@
   "devDependencies": {
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.2.0-rc.2"
   }
 }
