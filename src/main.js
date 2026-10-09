@@ -5,8 +5,11 @@ const path = require('path');
 const fs = require('fs');
 const { createVault, sanitizeVaultName, topLevelSkeletonLabels } = require('./vault');
 const { createMockEngine, createDeepSeekEngine, listInboxNotes } = require('./agent/engine');
-const { applyProposal, discardProposal } = require('./agent/proposals');
+const { applyProposal, discardProposal, proposeCreate, proposeEdit, proposeMove } = require('./agent/proposals');
 const { saveApiKey, loadApiKey, clearApiKey, hasApiKey, configDir } = require('./agent/keystore');
+const { createAdvancedController } = require('./agent/advanced/controller');
+const { classifyIpcOrigin } = require('./agent/advanced/origin');
+const { createToolLog } = require('./agent/advanced/tool-log');
 
 const PACK_SMOKE = process.argv.includes('--kvd-pack-smoke');
 
@@ -78,6 +81,81 @@ function writePrefs(patch) {
   const next = { ...readPrefs(), ...patch };
   fs.writeFileSync(PREFS_FILE(), JSON.stringify(next, null, 2));
   return next;
+}
+
+// ---------------------------------------------------------------------------
+// Advanced mode (AC-11..14) on the Cordis composition root (PR-7).
+// Default mode ask/sort/card stays model-only; tools exist only while advanced
+// is ON and the advanced fiber is mounted.
+// ---------------------------------------------------------------------------
+const advanced = createAdvancedController({ readPrefs, writePrefs });
+const toolLog = createToolLog({
+  dir: path.join(configDir(), 'logs'),
+  getSecrets: () => [loadApiKey(safeStorage).key],
+});
+/** @type {Map<string, (d: 'allow'|'deny') => void>} */
+const approvalWaiters = new Map();
+/** @type {ReturnType<typeof import('./agent/advanced/host.mjs').createAdvancedHost> | null} */
+let advancedHost = null;
+
+function sendToRenderer(channel, payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+}
+
+function requestApproval(req) {
+  if (!mainWindow || mainWindow.isDestroyed()) return Promise.resolve('deny');
+  return new Promise((resolve) => {
+    approvalWaiters.set(req.id, resolve);
+    sendToRenderer('advanced-approval-request', req);
+  });
+}
+
+function proposeFromAgent(change) {
+  if (!activeVault) return { ok: false, error: '未打开 vault' };
+  const c = change || {};
+  let res;
+  if (c.kind === 'create') res = proposeCreate(activeVault, c.path, c.content, c.summary);
+  else if (c.kind === 'edit') res = proposeEdit(activeVault, c.path, c.content, c.summary);
+  else if (c.kind === 'move') res = proposeMove(activeVault, c.from, c.to, c.summary);
+  else res = { ok: false, error: `未知改动类型：${c.kind}` };
+  if (!res.ok) return res;
+  pending.set(res.proposal.id, res.proposal);
+  sendToRenderer('agent-proposal', res.proposal);
+  return { ok: true, proposalId: res.proposal.id };
+}
+
+async function getAdvancedHost() {
+  if (advancedHost) return advancedHost;
+  const { createAdvancedHost } = await import('./agent/advanced/host.mjs');
+  advancedHost = createAdvancedHost({
+    controller: advanced,
+    log: toolLog,
+    requestApproval,
+    onPropose: proposeFromAgent,
+    getVaultRoot: () => activeVault,
+    getSecrets: () => [loadApiKey(safeStorage).key],
+  });
+  return advancedHost;
+}
+
+advanced.onChange((st) => {
+  if (!st.enabled) {
+    for (const [id, resolve] of approvalWaiters) {
+      approvalWaiters.delete(id);
+      resolve('deny');
+    }
+  }
+  toolLog.append({ event: 'settings', advancedEnabled: st.enabled, policy: st.policy });
+  sendToRenderer('advanced-state', advancedStatusSync());
+});
+
+function advancedStatusSync() {
+  const st = advanced.getState();
+  return {
+    ...st,
+    runtime: advancedHost ? advancedHost.status() : { running: false, lastError: null, composition: 'kvd-advanced-group' },
+    logFile: toolLog.file,
+  };
 }
 
 function getEngine() {
@@ -171,7 +249,8 @@ ipcMain.handle('agent-status', () => {
     vaultPath: activeVault,
     hasKey: hasApiKey(safeStorage),
     privacyAccepted: !!prefs.privacyAccepted,
-    mode: 'default',
+    mode: advanced.getState().enabled ? 'advanced' : 'default',
+    toolPolicy: advanced.getState().policy,
     engine: hasApiKey(safeStorage) ? 'dsh-llm-model-only' : 'mock',
   };
 });
@@ -270,4 +349,80 @@ ipcMain.handle('agent-discard', (_e, id) => {
   if (!proposal) return { ok: false, error: '找不到拟改动' };
   pending.delete(id);
   return discardProposal(proposal);
+});
+
+// ---- Settings > Advanced IPC (local origin only for enable/policy/approval) ----
+
+ipcMain.handle('advanced-status', async () => {
+  try { await getAdvancedHost(); } catch { /* host lazy */ }
+  return { ok: true, ...advancedStatusSync() };
+});
+
+ipcMain.handle('advanced-enable', async (e, opts) => {
+  const origin = classifyIpcOrigin(e, mainWindow);
+  const res = advanced.enable(origin, { acknowledgeRisk: !!(opts && opts.acknowledgeRisk) });
+  if (res.ok && res.state.enabled) {
+    try { await getAdvancedHost(); } catch (err) { /* start on demand */ }
+  }
+  return res;
+});
+
+ipcMain.handle('advanced-disable', async (e) => {
+  const res = advanced.disable(classifyIpcOrigin(e, mainWindow));
+  if (advancedHost) await advancedHost.stop('advanced-off');
+  return res;
+});
+
+ipcMain.handle('advanced-set-policy', (e, opts) => {
+  const origin = classifyIpcOrigin(e, mainWindow);
+  return advanced.setPolicy(origin, opts && opts.policy, { acknowledgeRisk: !!(opts && opts.acknowledgeRisk) });
+});
+
+ipcMain.handle('advanced-approval-reply', (e, opts) => {
+  const origin = classifyIpcOrigin(e, mainWindow);
+  const { isLocal } = require('./agent/advanced/origin');
+  if (!isLocal(origin)) return { ok: false, code: 'REMOTE_FORBIDDEN' };
+  const id = opts && opts.id;
+  const decision = opts && opts.decision === 'allow' ? 'allow' : 'deny';
+  const waiter = approvalWaiters.get(id);
+  if (!waiter) return { ok: false, error: 'no pending approval' };
+  approvalWaiters.delete(id);
+  waiter(decision);
+  return { ok: true };
+});
+
+ipcMain.handle('advanced-run', async (e, prompt) => {
+  const prefs = readPrefs();
+  if (!prefs.privacyAccepted && hasApiKey(safeStorage)) {
+    return { ok: false, error: '请先同意隐私说明', needPrivacy: true };
+  }
+  if (!advanced.getState().enabled) return { ok: false, error: '高级档未开启' };
+  if (!activeVault) return { ok: false, error: '未打开 vault' };
+  try {
+    const host = await getAdvancedHost();
+    // Advanced chat: for v0.2 plugin rewrite, surface that tools run via approval.
+    // Model-driven tool loops can be wired once a mock/live provider is selected;
+    // the sidebar still uses default-mode ask for plain Q&A.
+    await host.ensureStarted();
+    return {
+      ok: true,
+      answer: '高级档已就绪（组合根插件）。请通过工具调用触发审批；默认档提问仍可用侧栏「提问」。',
+      toolCalls: [],
+      runtime: host.status(),
+    };
+  } catch (err) {
+    return { ok: false, error: err.message || String(err) };
+  }
+});
+
+ipcMain.handle('advanced-reveal-log', () => {
+  try {
+    const dir = path.dirname(toolLog.file);
+    require('fs').mkdirSync(dir, { recursive: true });
+    if (!require('fs').existsSync(toolLog.file)) require('fs').writeFileSync(toolLog.file, '', { mode: 0o600 });
+    shell.showItemInFolder(toolLog.file);
+    return { ok: true, file: toolLog.file };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 });

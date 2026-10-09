@@ -1,8 +1,9 @@
 /**
  * kvd-runtime composition root: one Cordis Context, declarative rows, dispose on quit.
+ * Advanced mode mounts ADVANCED_ROWS as a disposable child fiber.
  */
 import { Context } from '@deepseek-ai/cordis';
-import { DEFAULT_ROWS, resolvePlugin } from './composition.mjs';
+import { DEFAULT_ROWS, resolvePlugin, advancedRowsFor } from './composition.mjs';
 
 /** @type {Promise<{ ctx: import('@deepseek-ai/cordis').Context, rows: object[] }> | null} */
 let bootPromise = null;
@@ -11,6 +12,11 @@ let runtime = null;
 let disposeCalled = false;
 let disposing = false;
 let quitHooksRegistered = false;
+
+/** @type {import('@deepseek-ai/cordis').Fiber | null} */
+let advancedFiber = null;
+/** @type {Promise<import('@deepseek-ai/cordis').Fiber> | null} */
+let advancedMounting = null;
 
 /**
  * Boot (or return) the shared Cordis runtime.
@@ -60,6 +66,67 @@ export function isRuntimeBooted() {
   return !!runtime;
 }
 
+export function isAdvancedMounted() {
+  return !!advancedFiber;
+}
+
+/**
+ * Mount the advanced plugin group as a disposable child fiber on the root ctx.
+ * Idempotent: if already mounted for the same session, returns the existing fiber.
+ * @param {{
+ *   workspaceRoot: string,
+ *   bridge?: object,
+ *   audit?: object,
+ *   vaultTools?: object,
+ * }} opts
+ */
+export async function mountAdvanced(opts) {
+  const { ctx } = await bootRuntime();
+  if (advancedFiber) return advancedFiber;
+  if (advancedMounting) return advancedMounting;
+
+  advancedMounting = (async () => {
+    const rows = advancedRowsFor(opts);
+    const AdvancedGroup = {
+      name: 'kvd-advanced-group',
+      async apply(groupCtx) {
+        for (const row of rows) {
+          if (row.disabled) continue;
+          const plugin = await resolvePlugin(row);
+          await groupCtx.plugin(plugin, row.config);
+        }
+        if (!groupCtx.get('tools')) {
+          throw new Error('kvd-advanced: tools service missing after mount');
+        }
+      },
+    };
+    const fiber = await ctx.plugin(AdvancedGroup);
+    advancedFiber = fiber;
+    return fiber;
+  })();
+
+  try {
+    return await advancedMounting;
+  } catch (err) {
+    advancedFiber = null;
+    throw err;
+  } finally {
+    advancedMounting = null;
+  }
+}
+
+/**
+ * Dispose the advanced fiber (AC-12). Tools / approval listeners vanish with it.
+ * Idempotent.
+ */
+export async function unmountAdvanced() {
+  const fiber = advancedFiber;
+  advancedFiber = null;
+  advancedMounting = null;
+  if (!fiber) return;
+  await fiber.dispose();
+}
+
 /**
  * Dispose the Cordis root fiber (idempotent). Sets wasDisposeCalled().
  */
@@ -67,6 +134,11 @@ export async function disposeRuntime() {
   disposeCalled = true;
   if (disposing) return;
   disposing = true;
+  try {
+    await unmountAdvanced().catch(() => {});
+  } catch {
+    /* ignore */
+  }
   const current = runtime;
   runtime = null;
   bootPromise = null;
@@ -80,7 +152,6 @@ export async function disposeRuntime() {
 
 /**
  * Hook Electron quit so the composition root is disposed.
- * Safe to call before boot; no-ops if already registered.
  * @param {import('electron').App} app
  */
 export function registerElectronQuitHooks(app) {
@@ -108,12 +179,12 @@ export function registerElectronQuitHooks(app) {
   });
 
   app.on('will-quit', () => {
-    // Best-effort if before-quit was skipped (e.g. app.exit).
     if (!disposeCalled) {
       disposeCalled = true;
       const current = runtime;
       runtime = null;
       bootPromise = null;
+      advancedFiber = null;
       if (current) {
         try {
           const p = current.ctx.fiber.dispose();

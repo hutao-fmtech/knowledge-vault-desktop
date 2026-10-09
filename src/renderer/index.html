@@ -8,11 +8,19 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <div id="advanced-indicator" class="advanced-indicator hidden" role="status" aria-live="polite">
+    <span class="dot"></span>
+    <strong>高级档已开启</strong>
+    <span id="advanced-indicator-policy">· 逐次审批</span>
+    <span class="muted-inline">Agent 可在只读沙箱中调用 dsh 工具 · 每次调用都记录到本机日志</span>
+    <button type="button" id="btn-indicator-off" class="indicator-btn">立即关闭</button>
+  </div>
   <div id="shell" class="shell">
     <main class="app" id="main-pane">
       <header class="hero">
         <h1>Knowledge Vault</h1>
         <p class="sub">一键创建 Obsidian 兼容个人知识库 · Agent 侧栏（默认档：只调模型）</p>
+        <button type="button" id="btn-open-settings" class="secondary settings-btn" title="设置">⚙ 设置</button>
       </header>
 
       <section id="view-welcome" class="card">
@@ -66,9 +74,16 @@
       <div class="agent-head">
         <h2>Agent</h2>
         <span id="agent-badge" class="badge">默认档</span>
+        <button type="button" id="btn-sidebar-settings" class="icon-btn" title="设置">⚙</button>
         <button type="button" id="btn-close-agent" class="icon-btn" title="关闭">×</button>
       </div>
       <p id="agent-vault" class="agent-vault muted">未打开 vault</p>
+      <div id="advanced-task" class="agent-block advanced-task hidden">
+        <h3>高级档任务 <span id="advanced-task-policy" class="badge badge-adv">逐次审批</span></h3>
+        <p class="muted small">Agent 可调用 dsh 工具（只读沙箱）。修改笔记只能生成拟改动，仍需 Apply。</p>
+        <textarea id="input-advanced" rows="3" placeholder="例如：统计 01-收件箱 里有几篇笔记，并为第一篇生成卡片"></textarea>
+        <button type="button" id="btn-advanced-run" class="primary">运行</button>
+      </div>
 
       <div id="agent-privacy" class="agent-block hidden">
         <h3>隐私说明</h3>
@@ -101,6 +116,7 @@
         </div>
       </div>
 
+
       <div class="agent-block">
         <h3>回复</h3>
         <pre id="agent-answer" class="agent-answer">尚未提问。</pre>
@@ -112,6 +128,68 @@
       </div>
     </aside>
   </div>
+  <div id="modal-settings" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="modal">
+      <div class="modal-head">
+        <h2 id="settings-title">设置</h2>
+        <button type="button" id="btn-close-settings" class="icon-btn" title="关闭">×</button>
+      </div>
+      <nav class="tabs"><span class="tab active">高级</span></nav>
+      <section class="settings-section" aria-label="高级">
+        <label class="switch-row">
+          <input type="checkbox" id="toggle-advanced" />
+          <span>
+            <strong>启用高级档（dsh 工具）</strong>
+            <small class="hint">默认关闭。开启后 Agent 可在 dsh 沙箱 profile 中调用 bash / 文件读取等工具；网络与插件工具保持禁用。只能在本机手动开启，远程指令无法开启。关闭立即生效，无需重启。</small>
+          </span>
+        </label>
+        <fieldset id="policy-fieldset" class="policy" disabled>
+          <legend>工具调用策略</legend>
+          <label class="radio-row"><input type="radio" name="tool-policy" value="approve" checked />
+            <span><strong>逐次审批（默认）</strong><small class="hint">每次调用前弹窗显示完整命令和全部参数，由你批准或拒绝。</small></span></label>
+          <label class="radio-row"><input type="radio" name="tool-policy" value="log-only" />
+            <span><strong>直接执行，仅记录</strong><small class="hint">不再询问，直接执行并写入日志。首次选择会显示风险提示。</small></span></label>
+        </fieldset>
+
+        <p id="advanced-runtime" class="muted small">运行时：未启动</p>
+        <p class="muted small">工具调用日志（vault 之外，不含 API key）：<code id="advanced-log-path">—</code>
+          <button type="button" id="btn-reveal-log" class="link-btn">打开位置</button></p>
+        <p id="settings-error" class="error hidden"></p>
+      </section>
+    </div>
+  </div>
+
+  <div id="modal-risk" class="modal-backdrop hidden" role="alertdialog" aria-modal="true" aria-labelledby="risk-title">
+    <div class="modal modal-narrow">
+      <h2 id="risk-title" class="danger-title">风险提示</h2>
+      <div id="risk-body" class="risk-body"></div>
+      <label class="check-row"><input type="checkbox" id="risk-ack" /> <span>我已了解上述风险</span></label>
+      <div class="actions">
+        <button type="button" id="btn-risk-cancel" class="secondary">取消</button>
+        <button type="button" id="btn-risk-confirm" class="danger" disabled>确认开启</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-approval" class="modal-backdrop hidden" role="alertdialog" aria-modal="true" aria-labelledby="approval-title">
+    <div class="modal">
+      <h2 id="approval-title">工具调用审批</h2>
+      <p class="muted">Agent 请求执行以下工具调用。以下是将要执行的<strong>完整命令与全部参数</strong>（在执行前由 Knowledge Vault 拦截）。</p>
+      <p class="approval-tool">工具：<code id="approval-tool">—</code> <span id="approval-nested" class="badge hidden">嵌套调用</span> <span id="approval-queue" class="muted small"></span></p>
+      <div id="approval-command-wrap">
+        <h3>命令</h3>
+        <pre id="approval-command" class="approval-pre"></pre>
+      </div>
+      <h3>全部参数（JSON）</h3>
+      <pre id="approval-args" class="approval-pre"></pre>
+      <p class="muted small">运行于 dsh 只读沙箱，工作目录为当前 vault。拒绝后该调用不会执行。</p>
+      <div class="actions">
+        <button type="button" id="btn-approval-deny" class="secondary">拒绝</button>
+        <button type="button" id="btn-approval-allow" class="primary">批准执行</button>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>
