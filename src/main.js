@@ -185,8 +185,17 @@ ipcMain.handle('agent-set-vault', (_e, vaultPath) => {
   return { ok: true, vaultPath };
 });
 
-ipcMain.handle('agent-accept-privacy', () => {
-  writePrefs({ privacyAccepted: true, privacyAcceptedAt: new Date().toISOString() });
+ipcMain.handle('agent-accept-privacy', async () => {
+  const at = new Date().toISOString();
+  writePrefs({ privacyAccepted: true, privacyAcceptedAt: at });
+  try {
+    const { getRuntime } = await import('./runtime/boot.mjs');
+    const { ctx } = await getRuntime();
+    const prefs = ctx.get('kvdPrefs');
+    if (prefs) prefs.acceptPrivacy(at);
+  } catch {
+    /* runtime may not be booted yet; file write is enough */
+  }
   return { ok: true };
 });
 
@@ -223,6 +232,10 @@ ipcMain.handle('agent-ask', async (_e, question) => {
 
 ipcMain.handle('agent-sort', async (_e, noteRel) => {
   if (!activeVault) return { ok: false, error: '未打开 vault' };
+  const prefs = readPrefs();
+  if (!prefs.privacyAccepted && hasApiKey(safeStorage)) {
+    return { ok: false, error: '请先同意隐私说明', needPrivacy: true };
+  }
   try {
     return stashProposals(await getEngine().sortInbox({ vaultRoot: activeVault, noteRel }));
   } catch (err) {
@@ -232,6 +245,10 @@ ipcMain.handle('agent-sort', async (_e, noteRel) => {
 
 ipcMain.handle('agent-card', async (_e, noteRel) => {
   if (!activeVault) return { ok: false, error: '未打开 vault' };
+  const prefs = readPrefs();
+  if (!prefs.privacyAccepted && hasApiKey(safeStorage)) {
+    return { ok: false, error: '请先同意隐私说明', needPrivacy: true };
+  }
   try {
     return stashProposals(await getEngine().makeCard({ vaultRoot: activeVault, noteRel }));
   } catch (err) {

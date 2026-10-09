@@ -112,37 +112,38 @@ function assert(cond, msg) {
   assert(mount.ok && mount.providers.includes('deepseek-official'), 'dsh-llm mount');
   assert(mount.hasCredentials, 'kvd-keychain provides credentials');
 
-  // --- PR-2: credentials seam; process.env.DEEPSEEK_API_KEY never defined ---
+  // --- PR-2 + PR-3: credentials + privacy gate (offline) ---
   delete process.env.DEEPSEEK_API_KEY;
   assert(process.env.DEEPSEEK_API_KEY === undefined, 'env key must start undefined');
 
   const runtimeSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'agent', 'dsh-runtime.js'), 'utf8');
   assert(!/process\.env\.DEEPSEEK_API_KEY\s*=/.test(runtimeSrc), 'dsh-runtime must not assign DEEPSEEK_API_KEY');
 
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'utf8');
+  assert(/agent-sort[\s\S]*needPrivacy/.test(mainSrc), 'G1: agent-sort must check privacy');
+  assert(/agent-card[\s\S]*needPrivacy/.test(mainSrc), 'G1: agent-card must check privacy');
+
   const { getRuntime, disposeRuntime, wasDisposeCalled } = await import('../src/runtime/boot.mjs');
   const { credentialRef } = await import('@deepseek-ai/dsh-credentials');
   const llmMod = await import('@deepseek-ai/dsh-llm');
   const { BlockAssembler, createSystemMessage, createUserMessage } = llmMod;
+  const { streamText } = require('../src/agent/dsh-runtime');
+  const { createDeepSeekEngine } = require('../src/agent/engine');
+
   const rt = await getRuntime();
   assert(rt && rt.ctx, 'runtime ctx');
   const ctx = rt.ctx;
   const credentials = ctx.get('credentials');
+  const kvdPrefs = ctx.get('kvdPrefs');
   assert(credentials, 'credentials service');
+  assert(kvdPrefs, 'kvdPrefs service');
+
+  kvdPrefs.clearPrivacyForTests();
+  assert(!kvdPrefs.getPrivacyAccepted(), 'privacy starts unset');
+
   const ref = credentialRef('DEEPSEEK_API_KEY');
   await credentials.set(ref, 'smoke-offline-key');
 
-  let envLeaked = false;
-  const checkEnv = () => {
-    if (Object.prototype.hasOwnProperty.call(process.env, 'DEEPSEEK_API_KEY')) envLeaked = true;
-    if (process.env.DEEPSEEK_API_KEY !== undefined) envLeaked = true;
-  };
-  const iv = setInterval(checkEnv, 1);
-
-  const [hitA, hitB] = await Promise.all([credentials.resolve(ref), credentials.resolve(ref)]);
-  assert(hitA && hitB && hitA.value === 'smoke-offline-key' && hitB.value === 'smoke-offline-key', 'concurrent resolve');
-  checkEnv();
-
-  // Offline mock adapter (no network): streams must resolve credentials without env
   const mockAdapter = {
     providerInfo(id) {
       return { id, name: 'Offline Mock' };
@@ -164,10 +165,11 @@ function assert(cond, msg) {
       return { model: resolved, stream: (options) => this.stream(options) };
     },
     async *stream(_options) {
-      checkEnv();
       const hit = await ctx.get('credentials').resolve(ref);
-      checkEnv();
       if (!hit || !hit.value) throw new Error('mock: missing credential');
+      if (Object.prototype.hasOwnProperty.call(process.env, 'DEEPSEEK_API_KEY')) {
+        throw new Error('env DEEPSEEK_API_KEY defined during stream');
+      }
       yield { type: 'block-start', index: 0, blockType: 'text' };
       yield { type: 'text-delta', index: 0, text: 'pong' };
       yield { type: 'block-end', index: 0, block: { type: 'text', text: 'pong' } };
@@ -176,24 +178,76 @@ function assert(cond, msg) {
   };
   ctx.llm.registerAdapter(['mock-offline'], mockAdapter);
 
-  async function streamOnce() {
-    checkEnv();
+  async function collectStream(provider) {
     const assembler = new BlockAssembler();
     for await (const chunk of ctx.llm.stream({
-      provider: 'mock-offline',
+      provider,
       model: 'mock',
       messages: [
         createSystemMessage('smoke'),
         createUserMessage({ content: [{ type: 'text', text: 'ping' }] }),
       ],
     })) {
-      checkEnv();
       assembler.push(chunk);
     }
+    return assembler;
+  }
+
+  // Without consent: llm/stream blocked (privacy gate)
+  {
+    const blocked = await collectStream('mock-offline');
+    assert(blocked.finish && blocked.finish.kind === 'error', 'privacy blocks stream');
+    assert(blocked.finish.failure && blocked.finish.failure.code === 'PRIVACY_REQUIRED', 'PRIVACY_REQUIRED');
+  }
+
+  // Without consent: ask + sort via DeepSeek engine (hits llm/stream) are blocked
+  const liveEngine = createDeepSeekEngine(() => 'smoke-offline-key');
+  const askBlocked = await liveEngine.ask({ vaultRoot: vault, question: 'anything' });
+  assert(!askBlocked.ok, 'ask blocked without privacy');
+  assert(
+    /隐私|PRIVACY/i.test(String(askBlocked.error || askBlocked.code || '')),
+    'ask privacy error'
+  );
+  const sortBlocked = await liveEngine.sortInbox({
+    vaultRoot: vault,
+    noteRel: '01-收件箱/待处理/another.md',
+  });
+  assert(!sortBlocked.ok, 'sort blocked without privacy');
+  assert(
+    /隐私|PRIVACY/i.test(String(sortBlocked.error || sortBlocked.code || '')),
+    'sort privacy error'
+  );
+  // Stronger: streamText itself is blocked
+  const stBlocked = await streamText({
+    apiKey: 'smoke-offline-key',
+    system: 's',
+    user: 'u',
+  });
+  assert(!stBlocked.ok, 'streamText blocked without privacy');
+  assert(/隐私|PRIVACY/i.test(String(stBlocked.error || stBlocked.code || '')), 'streamText privacy');
+
+  // After consent: streams pass (offline mock)
+  kvdPrefs.acceptPrivacy();
+  assert(kvdPrefs.getPrivacyAccepted(), 'privacy accepted');
+
+  let envLeaked = false;
+  const checkEnv = () => {
+    if (Object.prototype.hasOwnProperty.call(process.env, 'DEEPSEEK_API_KEY')) envLeaked = true;
+    if (process.env.DEEPSEEK_API_KEY !== undefined) envLeaked = true;
+  };
+  const iv = setInterval(checkEnv, 1);
+
+  const [hitA, hitB] = await Promise.all([credentials.resolve(ref), credentials.resolve(ref)]);
+  assert(hitA && hitB && hitA.value === 'smoke-offline-key' && hitB.value === 'smoke-offline-key', 'concurrent resolve');
+
+  async function streamOnce() {
+    checkEnv();
+    const assembler = await collectStream('mock-offline');
+    assert(!(assembler.finish && assembler.finish.kind === 'error'), 'consent allows stream');
     const parts = (assembler.message() && assembler.message().content) || assembler.blocks() || [];
-    const text = parts.filter((b) => b && b.type === 'text').map((b) => b.text).join('');
-    assert(text === 'pong', 'mock stream text');
-    return text;
+    const textOut = parts.filter((b) => b && b.type === 'text').map((b) => b.text).join('');
+    assert(textOut === 'pong', 'mock stream text after consent');
+    return textOut;
   }
 
   await Promise.all([streamOnce(), streamOnce()]);
@@ -201,7 +255,18 @@ function assert(cond, msg) {
   checkEnv();
   assert(!envLeaked, 'DEEPSEEK_API_KEY must never appear on process.env');
   assert(process.env.DEEPSEEK_API_KEY === undefined, 'env still undefined after concurrent streams');
+
+  // Mock engine ask/sort still work offline after consent (deterministic path)
+  const mockOk = await engine.ask({ vaultRoot: vault, question: 'Smoke Note 项目' });
+  assert(mockOk.ok, 'mock ask after consent');
+  const mockSort = await engine.sortInbox({
+    vaultRoot: vault,
+    noteRel: '01-收件箱/待处理/another.md',
+  });
+  assert(mockSort.ok && mockSort.proposals.length === 1, 'mock sort after consent');
+
   await credentials.unset(ref);
+  kvdPrefs.clearPrivacyForTests();
 
   // Composition root dispose (simulates before-quit / will-quit)
   await disposeRuntime();
