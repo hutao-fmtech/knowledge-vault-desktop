@@ -4,12 +4,14 @@ const fs = require('fs');
 const path = require('path');
 const { searchVault, listInboxNotes } = require('./search');
 const { proposeCreate, proposeMove } = require('./proposals');
+const { streamText } = require('./dsh-runtime');
 
 /**
- * Model-only Agent engine (default mode).
- * Live calls go through DeepSeek's OpenAI-compatible HTTP API.
- * `@deepseek-ai/dsh` is pinned for the advanced-mode PR; this default path
- * never loads bash/pwsh/fs/web/webhook tool packages (AC-11 default).
+ * Default-mode Agent engines.
+ *
+ * Live path: Cordis + dsh-llm + dsh-llm-deepseek-api-key (model-only stream).
+ * Mock path: offline, no network — used when no API key / AC-7 smoke.
+ * Advanced mode (tools / agent-loop / sessions via dsh profile) is a later PR.
  */
 
 const SYSTEM = `你是 Knowledge Vault 的助手。只根据提供的笔记片段回答。
@@ -26,46 +28,25 @@ function pickParaDest(text) {
 
 function cardType(text) {
   if (/方法|how|流程|步骤/.test(text || '')) return '方法卡片';
-  if (/观点|认为|认为|主张/.test(text || '')) return '观点卡片';
+  if (/观点|认为|主张/.test(text || '')) return '观点卡片';
   if (/索引|目录|moc/.test(text || '')) return '索引卡片';
   return '概念卡片';
 }
 
 function slugify(title) {
-  return String(title || 'card')
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/[^\w\u4e00-\u9fff-]+/g, '')
-    .slice(0, 40) || 'card';
+  return (
+    String(title || 'card')
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/[^\w\u4e00-\u9fff-]+/g, '')
+      .slice(0, 40) || 'card'
+  );
 }
 
-async function callDeepSeek({ apiKey, messages }) {
-  const res = await fetch('https://api.deepseek.com/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'deepseek-chat',
-      messages,
-      temperature: 0.2,
-    }),
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`DeepSeek API ${res.status}: ${body.slice(0, 200)}`);
-  }
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content || '';
-}
-
-/**
- * Offline / mocked engine — no network, no key. Used by AC-7 smoke and UI demos.
- */
 function createMockEngine() {
   return {
     id: 'mock',
+    backend: 'mock',
     async ask({ vaultRoot, question }) {
       const { hits } = searchVault(vaultRoot, question, 5);
       if (!hits.length) {
@@ -79,7 +60,9 @@ function createMockEngine() {
       const citations = hits.map((h) => h.path);
       return {
         ok: true,
-        answer: `（模拟）根据 ${citations[0]}：「${hits[0].snippet}」\n\n出处：${citations.map((c) => '`' + c + '`').join(', ')}`,
+        answer: `（模拟）根据 ${citations[0]}：「${hits[0].snippet}」\n\n出处：${citations
+          .map((c) => '`' + c + '`')
+          .join(', ')}`,
         citations,
         proposals: [],
       };
@@ -89,8 +72,7 @@ function createMockEngine() {
       if (!fs.existsSync(abs)) return { ok: false, error: `笔记不存在：${noteRel}` };
       const text = fs.readFileSync(abs, 'utf8');
       const destDir = pickParaDest(text);
-      const base = path.basename(noteRel);
-      const to = `${destDir}/${base}`;
+      const to = `${destDir}/${path.basename(noteRel)}`;
       const moved = proposeMove(vaultRoot, noteRel, to, `归类到 ${destDir}`);
       if (!moved.ok) return moved;
       return {
@@ -104,7 +86,12 @@ function createMockEngine() {
       const abs = path.join(vaultRoot, noteRel);
       if (!fs.existsSync(abs)) return { ok: false, error: `笔记不存在：${noteRel}` };
       const text = fs.readFileSync(abs, 'utf8');
-      const title = text.split('\n').find((l) => l.trim())?.replace(/^#\s*/, '').trim() || path.basename(noteRel, '.md');
+      const title =
+        text
+          .split('\n')
+          .find((l) => l.trim())
+          ?.replace(/^#\s*/, '')
+          .trim() || path.basename(noteRel, '.md');
       const type = cardType(text);
       const rel = `10-卡片盒/${type}/${slugify(title)}.md`;
       const body = `---\nsource: ${noteRel}\n---\n\n# ${title}\n\n${text.trim().slice(0, 1200)}\n`;
@@ -122,23 +109,28 @@ function createMockEngine() {
 
 function createDeepSeekEngine(getApiKey) {
   return {
-    id: 'deepseek-model-only',
+    id: 'dsh-llm-model-only',
+    backend: 'dsh-llm',
     async ask({ vaultRoot, question }) {
       const apiKey = getApiKey();
       if (!apiKey) return { ok: false, error: '未配置 API key', needKey: true };
       const { hits } = searchVault(vaultRoot, question, 6);
-      const context = hits.map((h) => `### ${h.path}\n${h.snippet}`).join('\n\n') || '(无命中片段)';
-      const answer = await callDeepSeek({
+      const context =
+        hits.map((h) => `### ${h.path}\n${h.snippet}`).join('\n\n') || '(无命中片段)';
+      const streamed = await streamText({
         apiKey,
-        messages: [
-          { role: 'system', content: SYSTEM },
-          {
-            role: 'user',
-            content: `问题：${question}\n\n笔记片段：\n${context}\n\n请回答并列出出处路径。`,
-          },
-        ],
+        system: SYSTEM,
+        user: `问题：${question}\n\n笔记片段：\n${context}\n\n请回答并列出出处路径。`,
       });
-      return { ok: true, answer, citations: hits.map((h) => h.path), proposals: [] };
+      if (!streamed.ok) return streamed;
+      return {
+        ok: true,
+        answer: streamed.text,
+        citations: hits.map((h) => h.path),
+        proposals: [],
+        backend: 'dsh-llm',
+        model: streamed.model,
+      };
     },
     async sortInbox({ vaultRoot, noteRel }) {
       const apiKey = getApiKey();
@@ -148,22 +140,16 @@ function createDeepSeekEngine(getApiKey) {
       let destDir = pickParaDest(text);
       let reason = '基于关键词启发式';
       if (apiKey) {
-        try {
-          const reply = await callDeepSeek({
-            apiKey,
-            messages: [
-              {
-                role: 'system',
-                content: '从 PARA 中选一个目录：02-项目、03-领域、04-资源、05-归档。只输出目录名与一行理由。',
-              },
-              { role: 'user', content: text.slice(0, 3000) },
-            ],
-          });
-          const m = reply.match(/0[2-5]-[\u4e00-\u9fffA-Za-z]+/);
+        const streamed = await streamText({
+          apiKey,
+          system:
+            '从 PARA 中选一个目录：02-项目、03-领域、04-资源、05-归档。只输出目录名与一行理由。不要调用工具。',
+          user: text.slice(0, 3000),
+        });
+        if (streamed.ok) {
+          const m = streamed.text.match(/0[2-5]-[\u4e00-\u9fffA-Za-z]+/);
           if (m) destDir = m[0];
-          reason = reply.slice(0, 200);
-        } catch {
-          /* fall back to heuristic */
+          reason = streamed.text.slice(0, 200);
         }
       }
       if (destDir === '02-项目') destDir = '02-项目/个人项目';
@@ -176,13 +162,19 @@ function createDeepSeekEngine(getApiKey) {
         citations: [noteRel],
         proposals: [moved.proposal],
         needKey: !apiKey,
+        backend: apiKey ? 'dsh-llm' : 'heuristic',
       };
     },
     async makeCard({ vaultRoot, noteRel }) {
       const abs = path.join(vaultRoot, noteRel);
       if (!fs.existsSync(abs)) return { ok: false, error: `笔记不存在：${noteRel}` };
       const text = fs.readFileSync(abs, 'utf8');
-      const title = text.split('\n').find((l) => l.trim())?.replace(/^#\s*/, '').trim() || path.basename(noteRel, '.md');
+      const title =
+        text
+          .split('\n')
+          .find((l) => l.trim())
+          ?.replace(/^#\s*/, '')
+          .trim() || path.basename(noteRel, '.md');
       const type = cardType(text);
       const rel = `10-卡片盒/${type}/${slugify(title)}.md`;
       const body = `---\nsource: ${noteRel}\n---\n\n# ${title}\n\n${text.trim().slice(0, 2000)}\n`;

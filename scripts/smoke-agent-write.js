@@ -105,7 +105,13 @@ function assert(cond, msg) {
   const askRes = await engine.ask({ vaultRoot: vault, question: 'Smoke Note 项目' });
   assert(askRes.ok && askRes.citations.length >= 0, 'ask ok');
 
-  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+  
+  // dsh-llm in-process mount (no network): providers must include deepseek-official
+  const { smokeMount } = require('../src/agent/dsh-runtime');
+  const mount = await smokeMount();
+  assert(mount.ok && mount.providers.includes('deepseek-official'), 'dsh-llm mount');
+
+const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
   assert(pkg.dependencies['@deepseek-ai/dsh'] === '0.2.0-rc.2', 'dsh pin');
   const lock = fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8');
   assert(!/embedded-agent-kit/.test(lock), 'no embedded-agent-kit');

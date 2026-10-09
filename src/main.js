@@ -120,7 +120,7 @@ ipcMain.handle('agent-status', () => {
     hasKey: hasApiKey(safeStorage),
     privacyAccepted: !!prefs.privacyAccepted,
     mode: 'default',
-    engine: hasApiKey(safeStorage) ? 'deepseek-model-only' : 'mock',
+    engine: hasApiKey(safeStorage) ? 'dsh-llm-model-only' : 'mock',
   };
 });
 
