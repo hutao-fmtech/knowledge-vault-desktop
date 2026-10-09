@@ -290,6 +290,202 @@ async function init() {
   });
 
   renderProposals();
+  initAdvanced();
+}
+
+// ---------------------------------------------------------------------------
+// Advanced mode UI (Settings > Advanced, indicator, risk warnings, approvals).
+// The main process is authoritative: these handlers only ask it to change
+// state, and every change is confirmed back through 'advanced-state'.
+// ---------------------------------------------------------------------------
+const adv = {
+  indicator: document.getElementById('advanced-indicator'),
+  indicatorPolicy: document.getElementById('advanced-indicator-policy'),
+  badge: document.getElementById('agent-badge'),
+  task: document.getElementById('advanced-task'),
+  taskPolicy: document.getElementById('advanced-task-policy'),
+  settings: document.getElementById('modal-settings'),
+  toggle: document.getElementById('toggle-advanced'),
+  policySet: document.getElementById('policy-fieldset'),
+  runtime: document.getElementById('advanced-runtime'),
+  logPath: document.getElementById('advanced-log-path'),
+  settingsError: document.getElementById('settings-error'),
+  risk: document.getElementById('modal-risk'),
+  riskBody: document.getElementById('risk-body'),
+  riskAck: document.getElementById('risk-ack'),
+  riskConfirm: document.getElementById('btn-risk-confirm'),
+  approval: document.getElementById('modal-approval'),
+  approvalTool: document.getElementById('approval-tool'),
+  approvalNested: document.getElementById('approval-nested'),
+  approvalQueue: document.getElementById('approval-queue'),
+  approvalCmdWrap: document.getElementById('approval-command-wrap'),
+  approvalCmd: document.getElementById('approval-command'),
+  approvalArgs: document.getElementById('approval-args'),
+  input: document.getElementById('input-advanced'),
+};
+const approvalQueue = [];
+let advState = { enabled: false, policy: 'approve' };
+
+const POLICY_LABEL = { approve: '逐次审批', 'log-only': '直接执行（仅记录）' };
+
+const RISK_TEXT = {
+  enable: `<p>开启高级档后，Agent 可以在 dsh 沙箱 profile 中调用内置工具（如 bash 命令、读取文件）。</p>
+<ul><li>工具在只读沙箱中运行，工作目录为当前 vault；修改笔记仍只能生成拟改动，需你 Apply。</li>
+<li>命令可以读取 vault 内容，并可能读取本机其它可读文件；读取结果会发送给模型服务。</li>
+<li>每次调用都会记录到本机日志（vault 之外，不含 API key）。</li>
+<li>只能在本机手动开启；随时可在顶部横幅或此处关闭，立即生效。</li></ul>`,
+  'log-only': `<p>选择「直接执行，仅记录」后，Agent 的工具调用将<strong>不再逐次询问</strong>，直接执行。</p>
+<ul><li>你不会在执行前看到命令；只能事后在日志中查看。</li>
+<li>沙箱、只读限制和拟改动 + Apply 规则仍然生效。</li>
+<li>可随时切回「逐次审批」。</li></ul>`,
+};
+
+function confirmRisk(kind) {
+  return new Promise((resolve) => {
+    adv.riskBody.innerHTML = RISK_TEXT[kind];
+    adv.riskConfirm.textContent = kind === 'enable' ? '确认开启高级档' : '确认直接执行';
+    adv.riskAck.checked = false;
+    adv.riskConfirm.disabled = true;
+    adv.risk.classList.remove('hidden');
+    const finish = (v) => {
+      adv.risk.classList.add('hidden');
+      adv.riskConfirm.onclick = null;
+      document.getElementById('btn-risk-cancel').onclick = null;
+      resolve(v);
+    };
+    adv.riskConfirm.onclick = () => finish(adv.riskAck.checked);
+    document.getElementById('btn-risk-cancel').onclick = () => finish(false);
+  });
+}
+
+function renderAdvanced(st) {
+  if (!st) return;
+  advState = st;
+  const on = !!st.enabled;
+  const label = POLICY_LABEL[st.policy] || st.policy;
+  adv.indicator.classList.toggle('hidden', !on);
+  adv.indicator.classList.toggle('log-only', on && st.policy === 'log-only');
+  adv.indicatorPolicy.textContent = `· ${label}`;
+  adv.badge.textContent = on ? `高级档 · ${label}` : '默认档';
+  adv.badge.className = on ? (st.policy === 'log-only' ? 'badge badge-adv-log' : 'badge badge-adv') : 'badge';
+  adv.task.classList.toggle('hidden', !on);
+  adv.taskPolicy.textContent = label;
+  adv.taskPolicy.className = st.policy === 'log-only' ? 'badge badge-adv-log' : 'badge badge-adv';
+  adv.toggle.checked = on;
+  adv.policySet.disabled = !on;
+  document.querySelectorAll('input[name="tool-policy"]').forEach((r) => { r.checked = r.value === st.policy; });
+  adv.logPath.textContent = st.logFile || '—';
+  const rt = st.runtime || {};
+  adv.runtime.textContent = !on
+    ? '运行时：未启动（高级档关闭，工具不可用）'
+    : rt.running
+      ? `运行时：插件组合根高级档（只读沙箱）运行中`
+      : `运行时：按需启动${rt.lastError ? ` · 上次错误：${rt.lastError}` : ''}`;
+  if (!on) {
+    approvalQueue.length = 0;
+    adv.approval.classList.add('hidden');
+  }
+}
+
+function showSettingsError(msg) {
+  adv.settingsError.textContent = msg || '';
+  adv.settingsError.classList.toggle('hidden', !msg);
+}
+
+async function enableAdvanced() {
+  let res = await window.vaultApi.advancedEnable(false);
+  if (!res.ok && res.needRiskAck) {
+    if (!(await confirmRisk('enable'))) return renderAdvanced(advState);
+    res = await window.vaultApi.advancedEnable(true);
+  }
+  if (!res.ok) showSettingsError(res.error || res.code);
+  if (res.state) renderAdvanced({ ...advState, ...res.state });
+}
+
+async function setPolicy(policy) {
+  let res = await window.vaultApi.advancedSetPolicy(policy, false);
+  if (!res.ok && res.needRiskAck) {
+    if (!(await confirmRisk('log-only'))) return renderAdvanced(advState);
+    res = await window.vaultApi.advancedSetPolicy(policy, true);
+  }
+  if (!res.ok) showSettingsError(res.error || res.code);
+  if (res.state) renderAdvanced({ ...advState, ...res.state });
+}
+
+function showNextApproval() {
+  const req = approvalQueue[0];
+  if (!req) {
+    adv.approval.classList.add('hidden');
+    return;
+  }
+  adv.approvalTool.textContent = req.tool;
+  adv.approvalNested.classList.toggle('hidden', !req.nested);
+  adv.approvalQueue.textContent = approvalQueue.length > 1 ? `（另有 ${approvalQueue.length - 1} 个待审批）` : '';
+  adv.approvalCmdWrap.classList.toggle('hidden', req.command == null);
+  adv.approvalCmd.textContent = req.command == null ? '' : req.command;
+  adv.approvalArgs.textContent = JSON.stringify(req.arguments, null, 2);
+  adv.approval.classList.remove('hidden');
+}
+
+async function answerApproval(decision) {
+  const req = approvalQueue.shift();
+  if (req) await window.vaultApi.advancedApprovalReply(req.id, decision);
+  showNextApproval();
+}
+
+async function initAdvanced() {
+  const open = async () => {
+    showSettingsError('');
+    renderAdvanced(await window.vaultApi.advancedStatus());
+    adv.settings.classList.remove('hidden');
+  };
+  document.getElementById('btn-open-settings').addEventListener('click', open);
+  document.getElementById('btn-sidebar-settings').addEventListener('click', open);
+  document.getElementById('btn-close-settings').addEventListener('click', () => adv.settings.classList.add('hidden'));
+  adv.riskAck.addEventListener('change', () => { adv.riskConfirm.disabled = !adv.riskAck.checked; });
+
+  adv.toggle.addEventListener('change', async (ev) => {
+    showSettingsError('');
+    if (ev.target.checked) await enableAdvanced();
+    else renderAdvanced({ ...advState, ...(await window.vaultApi.advancedDisable()).state });
+  });
+  document.querySelectorAll('input[name="tool-policy"]').forEach((r) => {
+    r.addEventListener('change', (ev) => { if (ev.target.checked) setPolicy(ev.target.value); });
+  });
+  document.getElementById('btn-indicator-off').addEventListener('click', async () => {
+    renderAdvanced({ ...advState, ...(await window.vaultApi.advancedDisable()).state });
+  });
+  document.getElementById('btn-reveal-log').addEventListener('click', () => window.vaultApi.advancedRevealLog());
+  document.getElementById('btn-approval-allow').addEventListener('click', () => answerApproval('allow'));
+  document.getElementById('btn-approval-deny').addEventListener('click', () => answerApproval('deny'));
+
+  document.getElementById('btn-advanced-run').addEventListener('click', async () => {
+    const prompt = adv.input.value.trim();
+    if (!prompt) return;
+    els.agentAnswer.textContent = '高级档运行中…（工具调用会先请求审批）';
+    const res = await window.vaultApi.advancedRun(prompt);
+    if (!res.ok) {
+      els.agentAnswer.textContent = res.error || res.code;
+      if (res.needPrivacy) els.agentPrivacy.classList.remove('hidden');
+      return;
+    }
+    const calls = (res.toolCalls || []).map((c) => c.name).join(', ');
+    els.agentAnswer.textContent = `${res.answer || ''}${calls ? `\n\n[工具调用：${calls}]` : ''}`;
+    els.agentAnswer.scrollIntoView({ block: 'nearest' });
+  });
+
+  window.vaultApi.onAdvancedState((st) => renderAdvanced(st));
+  window.vaultApi.onApprovalRequest((req) => {
+    approvalQueue.push(req);
+    if (approvalQueue.length === 1) showNextApproval();
+    else adv.approvalQueue.textContent = `（另有 ${approvalQueue.length - 1} 个待审批）`;
+  });
+  window.vaultApi.onAgentProposal((p) => {
+    state.proposals = state.proposals.concat([p]);
+    renderProposals();
+  });
+
+  renderAdvanced(await window.vaultApi.advancedStatus());
 }
 
 init();
