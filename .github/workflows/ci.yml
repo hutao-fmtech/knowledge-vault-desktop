@@ -46,7 +46,12 @@ jobs:
             ls -la dist || true
             exit 1
           fi
-          BIN="$(find "$APP_DIR" -maxdepth 1 -type f -executable ! -name '*.so' | head -1)"
+          # Prefer the Electron app binary; ignore chrome_crashpad_handler / helpers.
+          if [ -x "$APP_DIR/knowledge-vault-desktop" ]; then
+            BIN="$APP_DIR/knowledge-vault-desktop"
+          else
+            BIN="$(find "$APP_DIR" -maxdepth 1 -type f -executable ! -name '*.so' ! -name 'chrome_crashpad_handler' ! -name 'chrome-sandbox' | head -1)"
+          fi
           if [ -z "$BIN" ]; then
             echo "no executable in $APP_DIR" >&2
             ls -la "$APP_DIR" >&2
