@@ -26,6 +26,25 @@ npm start        # Electron UI (needs a display)
 
 MIT (application). Bundled template license: see `resources/template/LICENSE`.
 
+
+## Agent sidebar (v0.2 default mode)
+
+Default mode (this PR): ask the vault with citations, sort inbox → PARA, make a Zettelkasten card.
+Every write is a **proposed change**; disk updates only after **Apply**. Paths outside the vault, `..`, `.obsidian/`, and `00-系统/` are rejected.
+
+- Engine pin: `@deepseek-ai/dsh@0.2.0-rc.2` (dependency present; default mode never loads tool packages).
+- Without an API key the UI uses a local mock engine (offline). With a DeepSeek key, model calls use the OpenAI-compatible HTTP API (model-only).
+- Key storage: OS `safeStorage` when available, else app config dir — never inside the vault or repo.
+- Advanced mode (bash/tools) is **not** in this PR.
+
+```bash
+npm run smoke          # createVault + AC-7 agent write confirmation
+npm run smoke:agent    # AC-7 only
+npm start
+```
+
+Screenshots: `docs/screenshots/`.
+
 ## Packaging
 
 M1 ships **unsigned** internal-test installers for **Windows + macOS** via GitHub Actions (`.github/workflows/release.yml`):

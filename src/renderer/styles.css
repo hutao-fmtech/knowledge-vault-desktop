@@ -9,9 +9,9 @@
   --danger: #b91c1c;
   --ok: #166534;
   --radius: 12px;
+  --sidebar: 340px;
   font-family: "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
 }
-
 * { box-sizing: border-box; }
 body {
   margin: 0;
@@ -22,7 +22,9 @@ body {
   min-height: 100vh;
 }
 .hidden { display: none !important; }
-.app { max-width: 720px; margin: 0 auto; padding: 36px 24px 48px; }
+.shell { display: flex; min-height: 100vh; align-items: stretch; }
+.app { flex: 1; max-width: 720px; margin: 0 auto; padding: 36px 24px 48px; }
+.shell.with-agent .app { margin: 0; max-width: none; padding-right: 16px; }
 .hero h1 { margin: 0 0 6px; font-size: 1.75rem; letter-spacing: -0.02em; }
 .sub, .muted { margin: 0 0 16px; color: var(--muted); }
 .card {
@@ -37,15 +39,17 @@ body {
 .field { display: block; margin-bottom: 14px; }
 .field > span { display: block; font-size: 0.85rem; margin-bottom: 6px; color: var(--muted); }
 .row { display: flex; gap: 8px; }
-input[type="text"] {
+input[type="text"], input[type="password"], textarea, select {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
   font-size: 0.95rem;
+  font-family: inherit;
 }
-input[type="text"]:focus { outline: 2px solid #99f6e4; border-color: var(--accent); }
+textarea { resize: vertical; }
+input:focus, textarea:focus, select:focus { outline: 2px solid #99f6e4; border-color: var(--accent); }
 .hint { display: block; margin-top: 6px; color: var(--muted); font-size: 0.8rem; }
 .error { color: var(--danger); white-space: pre-wrap; margin: 0 0 12px; font-size: 0.9rem; }
 .ok { color: var(--ok); margin-top: 0; }
@@ -70,9 +74,42 @@ code {
   font-size: 0.78rem; padding: 4px 8px; border-radius: 999px;
   background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534;
 }
-.tree-pre {
+.tree-pre, .agent-answer {
   margin: 0; padding: 12px 14px; background: #fafaf9; border: 1px solid var(--line);
   border-radius: 8px; max-height: 280px; overflow: auto;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.8rem;
+  white-space: pre-wrap; word-break: break-word;
 }
 .foot-inline { margin: 14px 0 0; color: var(--muted); font-size: 0.78rem; }
+
+.agent-sidebar {
+  width: var(--sidebar);
+  flex-shrink: 0;
+  border-left: 1px solid var(--line);
+  background: #fffcf7;
+  padding: 16px 14px 28px;
+  overflow: auto;
+}
+.agent-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.agent-head h2 { margin: 0; font-size: 1.1rem; flex: 1; }
+.badge {
+  font-size: 0.72rem; padding: 2px 8px; border-radius: 999px;
+  background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0;
+}
+.icon-btn {
+  background: transparent; border: 1px solid var(--line); width: 32px; height: 32px;
+  padding: 0; line-height: 1; font-size: 1.2rem;
+}
+.agent-vault { font-size: 0.78rem; word-break: break-all; }
+.agent-block { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+.agent-block h3 { margin: 0 0 8px; font-size: 0.9rem; }
+.proposal-list { display: flex; flex-direction: column; gap: 10px; }
+.proposal {
+  border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: #fff;
+  font-size: 0.82rem;
+}
+.proposal .meta { color: var(--muted); margin-bottom: 6px; }
+.proposal pre {
+  margin: 0 0 8px; max-height: 120px; overflow: auto; background: #fafaf9;
+  padding: 8px; border-radius: 6px; font-size: 0.75rem; white-space: pre-wrap;
+}
