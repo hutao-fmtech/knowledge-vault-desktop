@@ -4,7 +4,7 @@
  * Default / model-only DeepSeek Harness LLM access.
  *
  * Obtains the shared Cordis Context from `src/runtime/` (composition root).
- * Does NOT create its own Context. Plugin rows live in composition.mjs.
+ * API keys resolve through `ctx.credentials` (kvd-keychain) — never process.env.
  *
  * Reference checkout (not vendored into this repo):
  *   /workspace/deepseek-harness  (= github.com/deepseek-ai/deepseek-harness)
@@ -31,17 +31,35 @@ async function boot() {
 }
 
 /**
+ * Ensure the DeepSeek API key is available via credentials (keystore), without
+ * touching process.env.DEEPSEEK_API_KEY.
+ */
+async function ensureCredential(ctx, apiKey) {
+  const { credentialRef } = await import('@deepseek-ai/dsh-credentials');
+  const ref = credentialRef('DEEPSEEK_API_KEY');
+  const credentials = ctx.get('credentials');
+  if (!credentials) {
+    return { ok: false, error: 'credentials service missing', code: 'NO_CREDENTIALS' };
+  }
+  let hit = await credentials.resolve(ref);
+  if (!hit && apiKey && String(apiKey).trim()) {
+    await credentials.set(ref, String(apiKey).trim());
+    hit = await credentials.resolve(ref);
+  }
+  if (!hit) {
+    return { ok: false, error: '未配置 API key', needKey: true };
+  }
+  return { ok: true, ref, credentials };
+}
+
+/**
  * Stream one model-only completion through dsh-llm.
  * @returns {Promise<{ ok: true, text: string, provider: string, model: string } | { ok: false, error: string, code?: string }>}
  */
 async function streamText({ apiKey, system, user, model = 'deepseek-flash' }) {
-  if (!apiKey || !String(apiKey).trim()) {
-    return { ok: false, error: '未配置 API key', needKey: true };
-  }
-
   const { ctx, BlockAssembler, createSystemMessage, createUserMessage } = await boot();
-  const prev = process.env.DEEPSEEK_API_KEY;
-  process.env.DEEPSEEK_API_KEY = String(apiKey).trim();
+  const ensured = await ensureCredential(ctx, apiKey);
+  if (!ensured.ok) return ensured;
 
   try {
     const messages = [
@@ -84,9 +102,6 @@ async function streamText({ apiKey, system, user, model = 'deepseek-flash' }) {
     return { ok: true, text, provider: 'deepseek-official', model };
   } catch (err) {
     return { ok: false, error: err.message || String(err), code: err.code };
-  } finally {
-    if (prev === undefined) delete process.env.DEEPSEEK_API_KEY;
-    else process.env.DEEPSEEK_API_KEY = prev;
   }
 }
 
@@ -96,7 +111,8 @@ async function smokeMount() {
   return {
     ok: true,
     providers: ctx.llm.listProviders().map((p) => p.id),
+    hasCredentials: ctx.get('credentials') !== undefined,
   };
 }
 
-module.exports = { streamText, smokeMount, boot };
+module.exports = { streamText, smokeMount, boot, ensureCredential };
