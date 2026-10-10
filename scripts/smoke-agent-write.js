@@ -113,6 +113,8 @@ function assert(cond, msg) {
   assert(mount.hasCredentials, 'kvd-keychain provides credentials');
   assert(mount.hasVault, 'kvd-vault provides vault');
   assert(mount.hasVaultSearch, 'kvd-search provides vaultSearch');
+  assert(mount.hasProposals, 'kvd-proposals provides proposals');
+  assert(mount.hasIpc, 'kvd-ipc-bridge provides ipc');
 
   // --- PR-2 + PR-3: credentials + privacy gate (offline) ---
   delete process.env.DEEPSEEK_API_KEY;
@@ -248,6 +250,32 @@ function assert(cond, msg) {
   );
   const pure = searchVault(vault, 'SECRET_SYS', 10);
   assert(pure.ok && pure.hits.length === 0, 'search.js excludes 00-系统');
+
+  // --- PR-5: kvd-proposals clears on vault switch (G4) + ipc bridge ---
+  const proposals = ctx.get('proposals');
+  const ipc = ctx.get('ipc');
+  assert(proposals, 'proposals service');
+  assert(ipc, 'ipc service');
+  assert(ipc.listHandled().includes('agent-apply'), 'ipc registered agent-apply');
+  assert(ipc.listHandled().includes('agent-discard'), 'ipc registered agent-discard');
+
+  const pCreated = proposals.create('10-卡片盒/概念卡片/pr5-pending.md', '# pending\n', 'g4');
+  assert(pCreated.ok, pCreated.error || 'proposals.create');
+  assert(proposals.size() === 1, 'one pending proposal');
+
+  // Switching vault must clear pending (kvd/vault-changed)
+  const vault2 = path.join(tmp, 'vault-b');
+  fs.mkdirSync(vault2, { recursive: true });
+  const switched = vaultSvc.setRoot(vault2);
+  assert(switched.ok, 'switch vault');
+  assert(proposals.size() === 0, 'G4: pending cleared on vault switch');
+
+  // Switch back for remaining tests
+  vaultSvc.setRoot(vault);
+  assert(proposals.size() === 0, 'still clear after switch back');
+
+  // ipc.push is callable (no window in pure-Node → false)
+  assert(ipc.push('agent-proposal', { id: 'x' }) === false, 'ipc.push no-ops without window');
 
   kvdPrefs.clearPrivacyForTests();
   assert(!kvdPrefs.getPrivacyAccepted(), 'privacy starts unset');

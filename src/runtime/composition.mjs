@@ -22,6 +22,11 @@ export const DEFAULT_ROWS = [
     module: './plugins/kvd-prefs.mjs',
   },
   {
+    id: 'kvd-ipc-bridge',
+    name: 'kvd-ipc-bridge',
+    module: './plugins/kvd-ipc-bridge.mjs',
+  },
+  {
     id: 'kvd-keychain',
     name: 'kvd-keychain',
     module: './plugins/kvd-keychain.mjs',
@@ -35,6 +40,11 @@ export const DEFAULT_ROWS = [
     id: 'kvd-search',
     name: 'kvd-search',
     module: './plugins/kvd-search.mjs',
+  },
+  {
+    id: 'kvd-proposals',
+    name: 'kvd-proposals',
+    module: './plugins/kvd-proposals.mjs',
   },
   {
     id: 'dsh-llm',

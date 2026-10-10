@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { createVault, sanitizeVaultName, topLevelSkeletonLabels } = require('./vault');
 const { createMockEngine, createDeepSeekEngine, listInboxNotes } = require('./agent/engine');
-const { applyProposal, discardProposal, proposeCreate, proposeEdit, proposeMove } = require('./agent/proposals');
+// proposals apply/discard/create live in kvd-proposals (ctx.proposals); pure helpers remain in ./agent/proposals.js
 const { saveApiKey, loadApiKey, clearApiKey, hasApiKey, configDir } = require('./agent/keystore');
 const { createAdvancedController } = require('./agent/advanced/controller');
 const { classifyIpcOrigin } = require('./agent/advanced/origin');
@@ -66,25 +66,45 @@ const PREFS_FILE = () => path.join(configDir(), 'prefs.json');
 let mainWindow = null;
 /** @type {string | null} */
 let activeVault = null;
-/** @type {Map<string, object>} */
-const pending = new Map();
 
+/**
+ * Boot (or return) the Cordis runtime and its context.
+ * @returns {Promise<import('@deepseek-ai/cordis').Context>}
+ */
+async function getRuntimeCtx() {
+  const { getRuntime } = await import('./runtime/boot.mjs');
+  const { ctx } = await getRuntime();
+  return ctx;
+}
 
 /**
  * Keep Cordis `ctx.vault` in sync with the shell's activeVault.
- * Emits `kvd/vault-changed` via VaultService.setRoot / clear.
+ * Emits `kvd/vault-changed` via VaultService.setRoot / clear
+ * (kvd-proposals clears pending on that event — G4).
  * @param {string | null} vaultPath
  */
 async function syncVaultService(vaultPath) {
   try {
-    const { getRuntime } = await import('./runtime/boot.mjs');
-    const { ctx } = await getRuntime();
+    const ctx = await getRuntimeCtx();
     const vault = ctx.get('vault');
     if (!vault) return;
     if (vaultPath) vault.setRoot(vaultPath);
     else vault.clear();
   } catch {
     /* runtime may not be booted yet */
+  }
+}
+
+/** Attach BrowserWindow getter to kvd-ipc-bridge for push + sender checks. */
+async function attachIpcBridge() {
+  try {
+    const ctx = await getRuntimeCtx();
+    const ipc = ctx.get('ipc');
+    if (ipc && typeof ipc.attachMainWindow === 'function') {
+      ipc.attachMainWindow(() => mainWindow);
+    }
+  } catch {
+    /* ignore */
   }
 }
 
@@ -119,29 +139,48 @@ const approvalWaiters = new Map();
 let advancedHost = null;
 
 function sendToRenderer(channel, payload) {
+  // Prefer ipc bridge push when runtime is up; fall back to direct send.
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+}
+
+async function ipcPush(channel, payload) {
+  try {
+    const ctx = await getRuntimeCtx();
+    const ipc = ctx.get('ipc');
+    if (ipc && ipc.push(channel, payload)) return;
+  } catch {
+    /* fall through */
+  }
+  sendToRenderer(channel, payload);
 }
 
 function requestApproval(req) {
   if (!mainWindow || mainWindow.isDestroyed()) return Promise.resolve('deny');
   return new Promise((resolve) => {
     approvalWaiters.set(req.id, resolve);
-    sendToRenderer('advanced-approval-request', req);
+    ipcPush('advanced-approval-request', req);
   });
 }
 
-function proposeFromAgent(change) {
+async function proposeFromAgent(change) {
   if (!activeVault) return { ok: false, error: '未打开 vault' };
-  const c = change || {};
-  let res;
-  if (c.kind === 'create') res = proposeCreate(activeVault, c.path, c.content, c.summary);
-  else if (c.kind === 'edit') res = proposeEdit(activeVault, c.path, c.content, c.summary);
-  else if (c.kind === 'move') res = proposeMove(activeVault, c.from, c.to, c.summary);
-  else res = { ok: false, error: `未知改动类型：${c.kind}` };
-  if (!res.ok) return res;
-  pending.set(res.proposal.id, res.proposal);
-  sendToRenderer('agent-proposal', res.proposal);
-  return { ok: true, proposalId: res.proposal.id };
+  try {
+    const ctx = await getRuntimeCtx();
+    const proposals = ctx.get('proposals');
+    if (!proposals) return { ok: false, error: 'proposals service missing' };
+    await syncVaultService(activeVault);
+    const c = change || {};
+    let res;
+    if (c.kind === 'create') res = proposals.create(c.path, c.content, c.summary);
+    else if (c.kind === 'edit') res = proposals.edit(c.path, c.content, c.summary);
+    else if (c.kind === 'move') res = proposals.move(c.from, c.to, c.summary);
+    else res = { ok: false, error: `未知改动类型：${c.kind}` };
+    if (!res.ok) return res;
+    proposals.pushToUi(res.proposal);
+    return { ok: true, proposalId: res.proposal.id };
+  } catch (err) {
+    return { ok: false, error: err.message || String(err) };
+  }
 }
 
 async function getAdvancedHost() {
@@ -206,7 +245,8 @@ function createWindow() {
 }
 
 if (!PACK_SMOKE) {
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    await attachIpcBridge();
     createWindow();
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -284,7 +324,7 @@ ipcMain.handle('agent-set-vault', async (_e, vaultPath) => {
     return { ok: false, error: '无效的 vault 路径' };
   }
   activeVault = vaultPath;
-  pending.clear();
+  // pending cleared by kvd-proposals on kvd/vault-changed (G4)
   await syncVaultService(activeVault);
   return { ok: true, vaultPath };
 });
@@ -311,14 +351,20 @@ ipcMain.handle('agent-list-inbox', () => {
   return { ok: true, notes: listInboxNotes(activeVault) };
 });
 
-function stashProposals(result) {
+async function stashProposals(result) {
   if (!result || !result.ok) return result;
-  const ids = [];
-  for (const p of result.proposals || []) {
-    pending.set(p.id, p);
-    ids.push(p.id);
+  try {
+    const ctx = await getRuntimeCtx();
+    const proposals = ctx.get('proposals');
+    if (proposals) {
+      await syncVaultService(activeVault);
+      const ids = proposals.stashMany(result.proposals || []);
+      return { ...result, proposalIds: ids };
+    }
+  } catch {
+    /* fall through with empty ids */
   }
-  return { ...result, proposalIds: ids };
+  return { ...result, proposalIds: (result.proposals || []).map((p) => p.id) };
 }
 
 ipcMain.handle('agent-ask', async (_e, question) => {
@@ -360,21 +406,7 @@ ipcMain.handle('agent-card', async (_e, noteRel) => {
   }
 });
 
-ipcMain.handle('agent-apply', (_e, id) => {
-  if (!activeVault) return { ok: false, error: '未打开 vault' };
-  const proposal = pending.get(id);
-  if (!proposal) return { ok: false, error: '找不到拟改动（可能已处理）' };
-  const result = applyProposal(activeVault, proposal);
-  if (result.ok) pending.delete(id);
-  return result;
-});
-
-ipcMain.handle('agent-discard', (_e, id) => {
-  const proposal = pending.get(id);
-  if (!proposal) return { ok: false, error: '找不到拟改动' };
-  pending.delete(id);
-  return discardProposal(proposal);
-});
+// agent-apply / agent-discard: registered by kvd-proposals via kvd-ipc-bridge
 
 // ---- Settings > Advanced IPC (local origin only for enable/policy/approval) ----
 
