@@ -116,6 +116,8 @@ async function smokeMount() {
     hasVaultSearch: ctx.get('vaultSearch') !== undefined,
     hasProposals: ctx.get('proposals') !== undefined,
     hasIpc: ctx.get('ipc') !== undefined,
+    hasSkills: ctx.get('kvdSkills') !== undefined,
+    hasMockProvider: ctx.llm.listProviders().some((p) => p.id === 'kvd-mock'),
   };
 }
 
