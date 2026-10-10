@@ -53,6 +53,33 @@ function tokenize(query) {
   return [...tokens];
 }
 
+const SNIPPET_BEFORE = 80;
+const SNIPPET_LEN = 220;
+
+/** Replace lone surrogates so the result is always well-formed UTF-16 (JSON-safe). */
+function toWellFormed(str) {
+  const s = String(str);
+  if (typeof s.toWellFormed === 'function') return s.toWellFormed();
+  return s.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD');
+}
+
+/**
+ * Build a snippet around a body match, sliced by code points (never splits a
+ * surrogate pair such as an emoji). `idx` is a UTF-16 index into `textLower`
+ * (body only); -1 means the match was in the path, so start at the top.
+ */
+function makeSnippet(text, textLower, idx) {
+  const cps = Array.from(text);
+  let cpIdx = 0;
+  if (idx > 0) {
+    // Lowercasing can (rarely) change length; map via the lowered prefix, clamp.
+    cpIdx = Math.min(cps.length, Array.from(textLower.slice(0, idx)).length);
+  }
+  const start = Math.max(0, cpIdx - SNIPPET_BEFORE);
+  const out = cps.slice(start, start + SNIPPET_LEN).join('');
+  return toWellFormed(out.replace(/\s+/g, ' ').trim());
+}
+
 /**
  * Keyword search over vault Markdown (excludes 00-系统 / 90-附件 / .obsidian).
  * A file matches when at least one token hits (path or body); ranked by hit count.
@@ -85,19 +112,19 @@ function searchVault(vaultRoot, query, limit = 8, opts = {}) {
     } catch {
       continue;
     }
-    const hay = `${resolved.rel || f.rel}\n${text}`.toLowerCase();
+    const relLower = String(resolved.rel || f.rel).toLowerCase();
+    const textLower = text.toLowerCase();
     let score = 0;
-    let firstIdx = -1;
+    let firstIdx = -1; // index into textLower (body only), -1 = path-only hit
     for (const t of terms) {
-      const idx = hay.indexOf(t);
-      if (idx >= 0) {
+      const bodyIdx = textLower.indexOf(t);
+      if (bodyIdx >= 0 || relLower.includes(t)) {
         score += t.length >= 4 ? 3 : 1;
-        if (firstIdx < 0) firstIdx = idx;
+        if (firstIdx < 0 && bodyIdx >= 0) firstIdx = bodyIdx;
       }
     }
     if (score === 0) continue;
-    const start = Math.max(0, Math.max(0, firstIdx) - 80);
-    const snippet = text.slice(start, start + 220).replace(/\s+/g, ' ').trim();
+    const snippet = makeSnippet(text, textLower, firstIdx);
     scored.push({ path: resolved.rel || f.rel, snippet, score });
   }
   scored.sort((a, b) => b.score - a.score);
@@ -126,4 +153,4 @@ function listInboxNotes(vaultRoot) {
   return out.sort();
 }
 
-module.exports = { searchVault, listInboxNotes, tokenize, SEARCH_EXCLUDED_TOP };
+module.exports = { searchVault, listInboxNotes, tokenize, makeSnippet, toWellFormed, SEARCH_EXCLUDED_TOP };

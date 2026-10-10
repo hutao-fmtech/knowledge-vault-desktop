@@ -1,5 +1,7 @@
 'use strict';
 
+const { DEFAULT_MODEL } = require('./models');
+
 /**
  * Default-mode Agent engines — thin facades over skills-logic (A1/A2/A3).
  *
@@ -51,7 +53,7 @@ function createDeepSeekEngine(getApiKey) {
           apiKey: getApiKey(),
           system,
           user,
-          model: model || 'deepseek-flash',
+          model: model || DEFAULT_MODEL,
         }),
     },
     { id: 'dsh-llm-model-only', backend: 'dsh-llm' },

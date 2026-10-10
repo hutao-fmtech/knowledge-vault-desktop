@@ -89,7 +89,8 @@ export const ADVANCED_ROWS = [
         "You are the Knowledge Vault assistant working inside the user's Obsidian vault. "
         + 'Answer in the user\'s language. Cite vault-relative note paths. '
         + 'The filesystem is read-only to you. To change the vault, call vault_propose_change; the user reviews and presses Apply. '
-        + 'Never touch .obsidian/ or 00-系统/. Never overwrite existing notes.',
+        + 'Never touch .obsidian/ or 00-系统/. Never overwrite existing notes. '
+        + 'Never set sandbox_permissions or ask for sandbox escalation: it is always rejected.',
     },
   },
   {

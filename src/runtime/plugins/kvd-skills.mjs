@@ -13,6 +13,7 @@ const {
   runSortInbox,
   runMakeCard,
 } = require('../../agent/skills-logic.js');
+const { DEFAULT_MODEL } = require('../../agent/models.js');
 const { proposeCreate, proposeMove } = require('../../agent/proposals.js');
 
 export const name = 'kvd-skills';
@@ -58,7 +59,7 @@ export class KvdSkillsService extends Service {
     const llmMod = await import('@deepseek-ai/dsh-llm');
     const { BlockAssembler, createSystemMessage, createUserMessage } = llmMod;
     const provider = opts.provider || 'deepseek-official';
-    const model = opts.model || (provider === 'kvd-mock' ? 'mock' : 'deepseek-flash');
+    const model = opts.model || (provider === 'kvd-mock' ? 'mock' : DEFAULT_MODEL);
 
     // Ensure credential exists for live provider (keychain), never env inject.
     if (provider === 'deepseek-official') {
