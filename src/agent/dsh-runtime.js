@@ -112,6 +112,7 @@ async function smokeMount() {
     ok: true,
     providers: ctx.llm.listProviders().map((p) => p.id),
     hasCredentials: ctx.get('credentials') !== undefined,
+    hasVault: ctx.get('vault') !== undefined,
   };
 }
 

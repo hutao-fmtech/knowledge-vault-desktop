@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { searchVault, listInboxNotes } = require('./search');
 const { proposeCreate, proposeMove } = require('./proposals');
+const { resolveVaultPath } = require('./paths');
 const { streamText } = require('./dsh-runtime');
 
 /**
@@ -68,9 +69,10 @@ function createMockEngine() {
       };
     },
     async sortInbox({ vaultRoot, noteRel }) {
-      const abs = path.join(vaultRoot, noteRel);
-      if (!fs.existsSync(abs)) return { ok: false, error: `笔记不存在：${noteRel}` };
-      const text = fs.readFileSync(abs, 'utf8');
+      const resolved = resolveVaultPath(vaultRoot, noteRel);
+      if (!resolved.ok) return resolved;
+      if (!fs.existsSync(resolved.abs)) return { ok: false, error: `笔记不存在：${noteRel}` };
+      const text = fs.readFileSync(resolved.abs, 'utf8');
       const destDir = pickParaDest(text);
       const to = `${destDir}/${path.basename(noteRel)}`;
       const moved = proposeMove(vaultRoot, noteRel, to, `归类到 ${destDir}`);
@@ -83,9 +85,10 @@ function createMockEngine() {
       };
     },
     async makeCard({ vaultRoot, noteRel }) {
-      const abs = path.join(vaultRoot, noteRel);
-      if (!fs.existsSync(abs)) return { ok: false, error: `笔记不存在：${noteRel}` };
-      const text = fs.readFileSync(abs, 'utf8');
+      const resolved = resolveVaultPath(vaultRoot, noteRel);
+      if (!resolved.ok) return resolved;
+      if (!fs.existsSync(resolved.abs)) return { ok: false, error: `笔记不存在：${noteRel}` };
+      const text = fs.readFileSync(resolved.abs, 'utf8');
       const title =
         text
           .split('\n')
@@ -134,9 +137,10 @@ function createDeepSeekEngine(getApiKey) {
     },
     async sortInbox({ vaultRoot, noteRel }) {
       const apiKey = getApiKey();
-      const abs = path.join(vaultRoot, noteRel);
-      if (!fs.existsSync(abs)) return { ok: false, error: `笔记不存在：${noteRel}` };
-      const text = fs.readFileSync(abs, 'utf8');
+      const resolved = resolveVaultPath(vaultRoot, noteRel);
+      if (!resolved.ok) return resolved;
+      if (!fs.existsSync(resolved.abs)) return { ok: false, error: `笔记不存在：${noteRel}` };
+      const text = fs.readFileSync(resolved.abs, 'utf8');
       let destDir = pickParaDest(text);
       let reason = '基于关键词启发式';
       if (apiKey) {
@@ -173,9 +177,10 @@ function createDeepSeekEngine(getApiKey) {
       };
     },
     async makeCard({ vaultRoot, noteRel }) {
-      const abs = path.join(vaultRoot, noteRel);
-      if (!fs.existsSync(abs)) return { ok: false, error: `笔记不存在：${noteRel}` };
-      const text = fs.readFileSync(abs, 'utf8');
+      const resolved = resolveVaultPath(vaultRoot, noteRel);
+      if (!resolved.ok) return resolved;
+      if (!fs.existsSync(resolved.abs)) return { ok: false, error: `笔记不存在：${noteRel}` };
+      const text = fs.readFileSync(resolved.abs, 'utf8');
       const title =
         text
           .split('\n')
