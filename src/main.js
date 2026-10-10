@@ -69,6 +69,26 @@ let activeVault = null;
 /** @type {Map<string, object>} */
 const pending = new Map();
 
+
+/**
+ * Keep Cordis `ctx.vault` in sync with the shell's activeVault.
+ * Emits `kvd/vault-changed` via VaultService.setRoot / clear.
+ * @param {string | null} vaultPath
+ */
+async function syncVaultService(vaultPath) {
+  try {
+    const { getRuntime } = await import('./runtime/boot.mjs');
+    const { ctx } = await getRuntime();
+    const vault = ctx.get('vault');
+    if (!vault) return;
+    if (vaultPath) vault.setRoot(vaultPath);
+    else vault.clear();
+  } catch {
+    /* runtime may not be booted yet */
+  }
+}
+
+
 function readPrefs() {
   try {
     return JSON.parse(fs.readFileSync(PREFS_FILE(), 'utf8'));
@@ -218,9 +238,12 @@ ipcMain.handle('pick-folder', async () => {
   return { ok: true, path: result.filePaths[0] };
 });
 
-ipcMain.handle('create-vault', (_e, { parentDir, rawName }) => {
+ipcMain.handle('create-vault', async (_e, { parentDir, rawName }) => {
   const result = createVault({ parentDir, rawName, templateRoot: TEMPLATE_ROOT });
-  if (result.ok) activeVault = result.vaultPath;
+  if (result.ok) {
+    activeVault = result.vaultPath;
+    await syncVaultService(activeVault);
+  }
   return result;
 });
 
@@ -233,6 +256,7 @@ ipcMain.handle('open-vault', async () => {
     return { ok: false, canceled: true };
   }
   activeVault = result.filePaths[0];
+  await syncVaultService(activeVault);
   return { ok: true, vaultPath: activeVault };
 });
 
@@ -255,12 +279,13 @@ ipcMain.handle('agent-status', () => {
   };
 });
 
-ipcMain.handle('agent-set-vault', (_e, vaultPath) => {
+ipcMain.handle('agent-set-vault', async (_e, vaultPath) => {
   if (!vaultPath || !fs.existsSync(vaultPath)) {
     return { ok: false, error: '无效的 vault 路径' };
   }
   activeVault = vaultPath;
   pending.clear();
+  await syncVaultService(activeVault);
   return { ok: true, vaultPath };
 });
 

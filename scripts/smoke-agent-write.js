@@ -111,6 +111,7 @@ function assert(cond, msg) {
   const mount = await smokeMount();
   assert(mount.ok && mount.providers.includes('deepseek-official'), 'dsh-llm mount');
   assert(mount.hasCredentials, 'kvd-keychain provides credentials');
+  assert(mount.hasVault, 'kvd-vault provides vault');
 
   // --- PR-2 + PR-3: credentials + privacy gate (offline) ---
   delete process.env.DEEPSEEK_API_KEY;
@@ -137,6 +138,68 @@ function assert(cond, msg) {
   const kvdPrefs = ctx.get('kvdPrefs');
   assert(credentials, 'credentials service');
   assert(kvdPrefs, 'kvdPrefs service');
+
+  // --- PR-4: kvd-vault resolve + realpath + blocked prefixes ---
+  const vaultSvc = ctx.get('vault');
+  assert(vaultSvc, 'vault service');
+  assert(vaultSvc.getRoot() === null, 'vault starts unset');
+
+  let vaultChangedEvents = [];
+  const offVault = ctx.on('kvd/vault-changed', (ev) => {
+    vaultChangedEvents.push(ev);
+  });
+  const setRes = vaultSvc.setRoot(vault);
+  assert(setRes.ok && setRes.vaultPath === path.resolve(vault), 'vault.setRoot');
+  assert(vaultSvc.getRoot() === path.resolve(vault), 'vault.getRoot');
+  assert(vaultChangedEvents.length === 1 && vaultChangedEvents[0].root === path.resolve(vault), 'kvd/vault-changed on set');
+
+  const okRel = vaultSvc.resolve('01-收件箱/待处理/another.md');
+  assert(okRel.ok && okRel.rel === '01-收件箱/待处理/another.md', 'resolve inbox note');
+  assert(fs.existsSync(okRel.abs), 'resolved abs exists');
+
+  // realpath: symlink escape must be rejected
+  const outside = path.join(tmp, 'outside-secret.md');
+  fs.writeFileSync(outside, 'SECRET', 'utf8');
+  const linkDir = path.join(vault, '01-收件箱', 'link-escape');
+  fs.mkdirSync(linkDir, { recursive: true });
+  const escapeLink = path.join(linkDir, 'escaped.md');
+  try {
+    fs.symlinkSync(outside, escapeLink);
+  } catch (err) {
+    // Some CI images disallow symlinks; skip realpath escape if so.
+    console.log('  (skip symlink realpath: ' + err.message + ')');
+  }
+  if (fs.existsSync(escapeLink) && fs.lstatSync(escapeLink).isSymbolicLink()) {
+    const escaped = vaultSvc.resolve('01-收件箱/link-escape/escaped.md');
+    assert(!escaped.ok, 'realpath must reject symlink escape');
+  }
+
+  for (const bad of [
+    '../outside.md',
+    '/etc/passwd',
+    '.obsidian/app.json',
+    '00-系统/HOME.md',
+    '00-系统/evil.md',
+  ]) {
+    const r = vaultSvc.resolve(bad);
+    assert(!r.ok, 'vault.resolve rejects ' + bad);
+    const r2 = resolveVaultPath(vault, bad);
+    assert(!r2.ok, 'resolveVaultPath rejects ' + bad);
+  }
+  assert(
+    vaultSvc.forbiddenPrefixes.includes('00-系统') && vaultSvc.forbiddenPrefixes.includes('.obsidian'),
+    'FORBIDDEN_PREFIXES exposed'
+  );
+
+  vaultSvc.clear();
+  assert(vaultSvc.getRoot() === null, 'vault.clear');
+  assert(
+    vaultChangedEvents.length === 2 && vaultChangedEvents[1].root === null,
+    'kvd/vault-changed on clear'
+  );
+  if (typeof offVault === 'function') offVault();
+  // Restore active root for remaining engine tests that use vault path directly
+  vaultSvc.setRoot(vault);
 
   kvdPrefs.clearPrivacyForTests();
   assert(!kvdPrefs.getPrivacyAccepted(), 'privacy starts unset');
