@@ -12,7 +12,12 @@ export const inject = ['llm', 'kvdPrefs'];
 export function apply(ctx) {
   ctx.on(
     'llm/stream',
-    (_options, next) => {
+    (options, next) => {
+      // Offline mock adapter never leaves the device — exempt from privacy gate.
+      // Smoke still uses a separate `mock-offline` route that remains gated.
+      if (options && options.provider === 'kvd-mock') {
+        return next();
+      }
       if (ctx.kvdPrefs.getPrivacyAccepted()) {
         return next();
       }

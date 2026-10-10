@@ -89,21 +89,25 @@ function assert(cond, msg) {
   const inbox2 = path.join(vault, '01-收件箱', '待处理', 'another.md');
   fs.mkdirSync(path.dirname(inbox2), { recursive: true });
   fs.writeFileSync(inbox2, '# Another\n方法流程说明\n', 'utf8');
+  assert(engine.viaSkills === true, 'createMockEngine is skills facade');
   const sortRes = await engine.sortInbox({
     vaultRoot: vault,
     noteRel: '01-收件箱/待处理/another.md',
   });
   assert(sortRes.ok && sortRes.proposals.length === 1, 'sort propose');
+  assert(sortRes.viaSkills && sortRes.skill === 'sortInbox', 'sort via skills-logic');
   assert(fs.existsSync(inbox2), 'no write before apply');
   const cardRes = await engine.makeCard({
     vaultRoot: vault,
     noteRel: '01-收件箱/待处理/another.md',
   });
   assert(cardRes.ok && cardRes.proposals.length === 1, 'card propose');
+  assert(cardRes.viaSkills && cardRes.skill === 'makeCard', 'card via skills-logic');
   assert(!fs.existsSync(path.join(vault, cardRes.proposals[0].path)), 'card not written');
 
   const askRes = await engine.ask({ vaultRoot: vault, question: 'Smoke Note 项目' });
   assert(askRes.ok && askRes.citations.length >= 0, 'ask ok');
+  assert(askRes.viaSkills && askRes.skill === 'ask', 'ask via skills-logic');
 
   
   // dsh-llm in-process mount via composition root (no network)
@@ -115,6 +119,8 @@ function assert(cond, msg) {
   assert(mount.hasVaultSearch, 'kvd-search provides vaultSearch');
   assert(mount.hasProposals, 'kvd-proposals provides proposals');
   assert(mount.hasIpc, 'kvd-ipc-bridge provides ipc');
+  assert(mount.hasSkills, 'kvd-skills provides kvdSkills');
+  assert(mount.hasMockProvider, 'kvd-llm-mock registered kvd-mock provider');
 
   // --- PR-2 + PR-3: credentials + privacy gate (offline) ---
   delete process.env.DEEPSEEK_API_KEY;
@@ -277,6 +283,62 @@ function assert(cond, msg) {
   // ipc.push is callable (no window in pure-Node → false)
   assert(ipc.push('agent-proposal', { id: 'x' }) === false, 'ipc.push no-ops without window');
 
+  // --- PR-6: kvd-skills + kvd-llm-mock (adapter swap, not parallel engine) ---
+  const kvdSkills = ctx.get('kvdSkills');
+  assert(kvdSkills, 'kvdSkills service');
+  assert(ctx.llm.listProviders().some((p) => p.id === 'kvd-mock'), 'kvd-mock in listProviders');
+
+  // Offline skills path (forceMock): goes through kvd-mock adapter / skills-logic
+  kvdPrefs.clearPrivacyForTests();
+  assert(!kvdPrefs.getPrivacyAccepted(), 'privacy unset before mock skills');
+
+  const skillAsk = await kvdSkills.ask({ question: '写盘确认', forceMock: true });
+  assert(skillAsk.ok && skillAsk.viaSkills && skillAsk.skill === 'ask', 'skills ask viaSkills');
+  assert(/模拟|写盘|zh-bigram|出处/.test(String(skillAsk.answer || '')), 'skills ask mock answer');
+
+  const skillSort = await kvdSkills.sortInbox({
+    noteRel: '01-收件箱/待处理/another.md',
+    forceMock: true,
+  });
+  assert(skillSort.ok && skillSort.viaSkills && skillSort.skill === 'sortInbox', 'skills sort');
+  assert(skillSort.proposals && skillSort.proposals.length === 1, 'skills sort proposes');
+  assert(fs.existsSync(path.join(vault, '01-收件箱', '待处理', 'another.md')), 'skills sort no write');
+
+  const skillCard = await kvdSkills.makeCard({
+    noteRel: '01-收件箱/待处理/another.md',
+    forceMock: true,
+  });
+  assert(skillCard.ok && skillCard.viaSkills && skillCard.skill === 'makeCard', 'skills card');
+  assert(skillCard.proposals && skillCard.proposals.length === 1, 'skills card proposes');
+  assert(!fs.existsSync(path.join(vault, skillCard.proposals[0].path)), 'skills card no write');
+
+  // kvd-mock provider exempt from privacy (offline); mock-offline remains gated below
+  {
+    const assembler = new BlockAssembler();
+    for await (const chunk of ctx.llm.stream({
+      provider: 'kvd-mock',
+      model: 'mock',
+      messages: [
+        createSystemMessage('你是 Knowledge Vault 的助手。只根据提供的笔记片段回答。'),
+        createUserMessage({
+          content: [{ type: 'text', text: '问题：x\n\n笔记片段：\n### a.md\nsnippet\n\n请回答并列出出处路径。' }],
+        }),
+      ],
+    })) {
+      assembler.push(chunk);
+    }
+    assert(!(assembler.finish && assembler.finish.kind === 'error'), 'kvd-mock exempt from privacy');
+    const parts = (assembler.message() && assembler.message().content) || assembler.blocks() || [];
+    const out = parts.filter((b) => b && b.type === 'text').map((b) => b.text).join('');
+    assert(/模拟/.test(out), 'kvd-mock returns mock ask text');
+  }
+
+  // main.js default-mode IPC must call runSkill / kvdSkills (not duplicated engine path)
+  assert(/runSkill\(['"]ask['"]/.test(mainSrc), 'main agent-ask uses runSkill');
+  assert(/runSkill\(['"]sortInbox['"]/.test(mainSrc), 'main agent-sort uses runSkill');
+  assert(/runSkill\(['"]makeCard['"]/.test(mainSrc), 'main agent-card uses runSkill');
+  assert(!/getEngine\(\)\.ask/.test(mainSrc), 'main no longer getEngine().ask');
+
   kvdPrefs.clearPrivacyForTests();
   assert(!kvdPrefs.getPrivacyAccepted(), 'privacy starts unset');
 
@@ -395,14 +457,17 @@ function assert(cond, msg) {
   assert(!envLeaked, 'DEEPSEEK_API_KEY must never appear on process.env');
   assert(process.env.DEEPSEEK_API_KEY === undefined, 'env still undefined after concurrent streams');
 
-  // Mock engine ask/sort still work offline after consent (deterministic path)
+  // Mock engine ask/sort still work offline after consent (skills-logic facade)
   const mockOk = await engine.ask({ vaultRoot: vault, question: 'Smoke Note 项目' });
-  assert(mockOk.ok, 'mock ask after consent');
+  assert(mockOk.ok && mockOk.viaSkills, 'mock ask after consent via skills');
   const mockSort = await engine.sortInbox({
     vaultRoot: vault,
     noteRel: '01-收件箱/待处理/another.md',
   });
-  assert(mockSort.ok && mockSort.proposals.length === 1, 'mock sort after consent');
+  assert(mockSort.ok && mockSort.proposals.length === 1 && mockSort.viaSkills, 'mock sort after consent');
+
+  // Live engine facade also marks viaSkills (privacy already accepted; stream uses mock-offline only in collectStream)
+  assert(liveEngine.viaSkills === true, 'createDeepSeekEngine is skills facade');
 
   await credentials.unset(ref);
   kvdPrefs.clearPrivacyForTests();

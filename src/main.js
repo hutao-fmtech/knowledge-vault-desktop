@@ -218,9 +218,25 @@ function advancedStatusSync() {
 }
 
 function getEngine() {
+  // Legacy facade for status labeling / tests. Default-mode IPC uses ctx.kvdSkills.
   const key = loadApiKey(safeStorage).key;
   if (!key) return createMockEngine();
   return createDeepSeekEngine(() => loadApiKey(safeStorage).key);
+}
+
+/**
+ * Run A1/A2/A3 through kvd-skills (single path; mock = llm adapter swap).
+ * @param {'ask'|'sortInbox'|'makeCard'} action
+ * @param {object} payload
+ */
+async function runSkill(action, payload) {
+  const ctx = await getRuntimeCtx();
+  await syncVaultService(activeVault);
+  const skills = ctx.get('kvdSkills');
+  if (!skills || typeof skills[action] !== 'function') {
+    throw new Error('kvdSkills missing — composition did not mount kvd-skills');
+  }
+  return skills[action](payload);
 }
 
 function createWindow() {
@@ -374,7 +390,7 @@ ipcMain.handle('agent-ask', async (_e, question) => {
     return { ok: false, error: '请先同意隐私说明', needPrivacy: true };
   }
   try {
-    return stashProposals(await getEngine().ask({ vaultRoot: activeVault, question }));
+    return stashProposals(await runSkill('ask', { question }));
   } catch (err) {
     return { ok: false, error: err.message };
   }
@@ -387,7 +403,7 @@ ipcMain.handle('agent-sort', async (_e, noteRel) => {
     return { ok: false, error: '请先同意隐私说明', needPrivacy: true };
   }
   try {
-    return stashProposals(await getEngine().sortInbox({ vaultRoot: activeVault, noteRel }));
+    return stashProposals(await runSkill('sortInbox', { noteRel }));
   } catch (err) {
     return { ok: false, error: err.message };
   }
@@ -400,7 +416,7 @@ ipcMain.handle('agent-card', async (_e, noteRel) => {
     return { ok: false, error: '请先同意隐私说明', needPrivacy: true };
   }
   try {
-    return stashProposals(await getEngine().makeCard({ vaultRoot: activeVault, noteRel }));
+    return stashProposals(await runSkill('makeCard', { noteRel }));
   } catch (err) {
     return { ok: false, error: err.message };
   }

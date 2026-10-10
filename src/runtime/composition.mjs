@@ -62,6 +62,16 @@ export const DEFAULT_ROWS = [
     module: '@deepseek-ai/dsh-llm-deepseek-api-key',
     config: { apiKeyEnv: 'DEEPSEEK_API_KEY' },
   },
+  {
+    id: 'kvd-llm-mock',
+    name: 'kvd-llm-mock',
+    module: './plugins/kvd-llm-mock.mjs',
+  },
+  {
+    id: 'kvd-skills',
+    name: 'kvd-skills',
+    module: './plugins/kvd-skills.mjs',
+  },
 ];
 
 /**
