@@ -114,6 +114,8 @@ async function smokeMount() {
     hasCredentials: ctx.get('credentials') !== undefined,
     hasVault: ctx.get('vault') !== undefined,
     hasVaultSearch: ctx.get('vaultSearch') !== undefined,
+    hasProposals: ctx.get('proposals') !== undefined,
+    hasIpc: ctx.get('ipc') !== undefined,
   };
 }
 
