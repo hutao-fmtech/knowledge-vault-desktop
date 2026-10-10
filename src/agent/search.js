@@ -2,7 +2,10 @@
 
 const fs = require('fs');
 const path = require('path');
-const { isReadableRel } = require('./paths');
+const { isReadableRel, resolveVaultPath } = require('./paths');
+
+/** Directories excluded from search (top-level). */
+const SEARCH_EXCLUDED_TOP = ['00-系统', '90-附件', '.obsidian'];
 
 function walkMd(dir, vaultRoot, out) {
   let entries;
@@ -17,7 +20,7 @@ function walkMd(dir, vaultRoot, out) {
     const rel = path.relative(vaultRoot, abs).split(path.sep).join('/');
     if (e.isDirectory()) {
       const top = rel.split('/')[0];
-      if (top === '00-系统' || top === '90-附件') continue;
+      if (SEARCH_EXCLUDED_TOP.includes(top)) continue;
       walkMd(abs, vaultRoot, out);
     } else if (e.isFile() && /\.md$/i.test(e.name) && isReadableRel(rel)) {
       out.push({ abs, rel });
@@ -51,25 +54,38 @@ function tokenize(query) {
 }
 
 /**
- * Keyword search over vault Markdown (excludes 00-系统 / 90-附件).
+ * Keyword search over vault Markdown (excludes 00-系统 / 90-附件 / .obsidian).
  * A file matches when at least one token hits (path or body); ranked by hit count.
+ *
+ * @param {string} vaultRoot
+ * @param {string} query
+ * @param {number} [limit=8]
+ * @param {{ resolve?: (root: string, rel: string) => { ok: boolean, abs?: string, rel?: string, error?: string } }} [opts]
+ *        Optional path resolver (defaults to resolveVaultPath). kvd-search passes vault.resolveAgainst.
  */
-function searchVault(vaultRoot, query, limit = 8) {
+function searchVault(vaultRoot, query, limit = 8, opts = {}) {
   const terms = tokenize(query);
   if (!terms.length || !vaultRoot || !fs.existsSync(vaultRoot)) {
     return { ok: true, hits: [] };
   }
+  const resolve =
+    typeof opts.resolve === 'function'
+      ? opts.resolve
+      : (root, rel) => resolveVaultPath(root, rel);
+
   const files = [];
   walkMd(vaultRoot, vaultRoot, files);
   const scored = [];
   for (const f of files) {
+    const resolved = resolve(vaultRoot, f.rel);
+    if (!resolved || !resolved.ok) continue;
     let text;
     try {
-      text = fs.readFileSync(f.abs, 'utf8');
+      text = fs.readFileSync(resolved.abs, 'utf8');
     } catch {
       continue;
     }
-    const hay = `${f.rel}\n${text}`.toLowerCase();
+    const hay = `${resolved.rel || f.rel}\n${text}`.toLowerCase();
     let score = 0;
     let firstIdx = -1;
     for (const t of terms) {
@@ -82,7 +98,7 @@ function searchVault(vaultRoot, query, limit = 8) {
     if (score === 0) continue;
     const start = Math.max(0, Math.max(0, firstIdx) - 80);
     const snippet = text.slice(start, start + 220).replace(/\s+/g, ' ').trim();
-    scored.push({ path: f.rel, snippet, score });
+    scored.push({ path: resolved.rel || f.rel, snippet, score });
   }
   scored.sort((a, b) => b.score - a.score);
   return { ok: true, hits: scored.slice(0, limit).map(({ path: p, snippet }) => ({ path: p, snippet })) };
@@ -110,4 +126,4 @@ function listInboxNotes(vaultRoot) {
   return out.sort();
 }
 
-module.exports = { searchVault, listInboxNotes, tokenize };
+module.exports = { searchVault, listInboxNotes, tokenize, SEARCH_EXCLUDED_TOP };

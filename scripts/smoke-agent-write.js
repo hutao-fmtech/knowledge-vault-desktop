@@ -112,6 +112,7 @@ function assert(cond, msg) {
   assert(mount.ok && mount.providers.includes('deepseek-official'), 'dsh-llm mount');
   assert(mount.hasCredentials, 'kvd-keychain provides credentials');
   assert(mount.hasVault, 'kvd-vault provides vault');
+  assert(mount.hasVaultSearch, 'kvd-search provides vaultSearch');
 
   // --- PR-2 + PR-3: credentials + privacy gate (offline) ---
   delete process.env.DEEPSEEK_API_KEY;
@@ -200,6 +201,53 @@ function assert(cond, msg) {
   if (typeof offVault === 'function') offVault();
   // Restore active root for remaining engine tests that use vault path directly
   vaultSvc.setRoot(vault);
+
+  // --- PR-4b: kvd-search Chinese bigram + excluded dirs ---
+  const vaultSearch = ctx.get('vaultSearch');
+  assert(vaultSearch, 'vaultSearch service');
+
+  // Seed inbox with a Chinese phrase that bigrams must match
+  const zhNote = path.join(vault, '01-收件箱', '待处理', 'zh-bigram.md');
+  fs.mkdirSync(path.dirname(zhNote), { recursive: true });
+  fs.writeFileSync(
+    zhNote,
+    '# 写盘确认\n\nVault Agent 默认档写盘前要做什么：先拟改动再 Apply。\n',
+    'utf8'
+  );
+  // Plantable markers inside excluded dirs — must NOT appear in hits
+  const sysNote = path.join(vault, '00-系统', 'secret-hit.md');
+  fs.mkdirSync(path.dirname(sysNote), { recursive: true });
+  fs.writeFileSync(sysNote, '# 写盘\n系统目录里的写盘不应被搜到 SECRET_SYS\n', 'utf8');
+  const attNote = path.join(vault, '90-附件', 'secret-att.md');
+  fs.mkdirSync(path.dirname(attNote), { recursive: true });
+  fs.writeFileSync(attNote, '# 写盘\n附件目录里的写盘不应被搜到 SECRET_ATT\n', 'utf8');
+
+  const bigrams = vaultSearch.tokenize('Vault Agent 默认档写盘前要做什么');
+  assert(bigrams.includes('写盘'), 'tokenize yields 写盘 bigram');
+
+  const found = vaultSearch.search('Vault Agent 默认档写盘前要做什么', 10);
+  assert(found.ok, 'vaultSearch.search ok');
+  assert(
+    found.hits.some((h) => h.path.includes('zh-bigram.md')),
+    'Chinese bigram search finds inbox note'
+  );
+  assert(
+    !found.hits.some((h) => h.path.startsWith('00-系统/') || h.path.startsWith('90-附件/')),
+    'excluded dirs 00-系统 / 90-附件 not searched'
+  );
+  const leak = vaultSearch.search('SECRET_SYS', 10);
+  assert(leak.ok && leak.hits.length === 0, '00-系统 content not searchable');
+  const leakAtt = vaultSearch.search('SECRET_ATT', 10);
+  assert(leakAtt.ok && leakAtt.hits.length === 0, '90-附件 content not searchable');
+
+  // Pure search.js path also excludes those dirs
+  const { searchVault, SEARCH_EXCLUDED_TOP } = require('../src/agent/search');
+  assert(
+    SEARCH_EXCLUDED_TOP.includes('00-系统') && SEARCH_EXCLUDED_TOP.includes('90-附件'),
+    'SEARCH_EXCLUDED_TOP'
+  );
+  const pure = searchVault(vault, 'SECRET_SYS', 10);
+  assert(pure.ok && pure.hits.length === 0, 'search.js excludes 00-系统');
 
   kvdPrefs.clearPrivacyForTests();
   assert(!kvdPrefs.getPrivacyAccepted(), 'privacy starts unset');

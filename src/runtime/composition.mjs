@@ -32,6 +32,11 @@ export const DEFAULT_ROWS = [
     module: './plugins/kvd-vault.mjs',
   },
   {
+    id: 'kvd-search',
+    name: 'kvd-search',
+    module: './plugins/kvd-search.mjs',
+  },
+  {
     id: 'dsh-llm',
     name: 'dsh-llm',
     module: '@deepseek-ai/dsh-llm',
