@@ -1,5 +1,7 @@
 'use strict';
 
+const { DEFAULT_MODEL } = require('./models');
+
 /**
  * Default-mode A1/A2/A3 flows (ask / sortInbox / makeCard).
  * One implementation; Cordis kvd-skills and the thin engine facades both call this.
@@ -65,7 +67,7 @@ async function runAsk(deps, { vaultRoot, question }) {
       system: SYSTEM,
       user: `问题：${question}\n\n笔记片段：\n${context}\n\n请回答并列出出处路径。`,
       provider: deps.provider || 'deepseek-official',
-      model: 'deepseek-flash',
+      model: DEFAULT_MODEL,
     });
     if (!streamed.ok) return { ...streamed, viaSkills: true, skill: 'ask' };
     return {
@@ -154,7 +156,7 @@ async function runSortInbox(deps, { vaultRoot, noteRel }) {
         '从 PARA 中选一个目录：02-项目、03-领域、04-资源、05-归档。只输出目录名与一行理由。不要调用工具。',
       user: text.slice(0, 3000),
       provider: deps.provider || 'deepseek-official',
-      model: 'deepseek-flash',
+      model: DEFAULT_MODEL,
     });
     if (streamed.ok) {
       const m = streamed.text.match(/0[2-5]-[\u4e00-\u9fffA-Za-z]+/);

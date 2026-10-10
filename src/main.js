@@ -10,6 +10,8 @@ const { saveApiKey, loadApiKey, clearApiKey, hasApiKey, configDir } = require('.
 const { createAdvancedController } = require('./agent/advanced/controller');
 const { classifyIpcOrigin } = require('./agent/advanced/origin');
 const { createToolLog } = require('./agent/advanced/tool-log');
+const { advancedRunResult } = require('./agent/advanced/run-result');
+const { LIVE_PROVIDER, MOCK_PROVIDER, MOCK_MODEL, DEFAULT_MODEL } = require('./agent/models');
 
 const PACK_SMOKE = process.argv.includes('--kvd-pack-smoke');
 
@@ -193,6 +195,11 @@ async function getAdvancedHost() {
     onPropose: proposeFromAgent,
     getVaultRoot: () => activeVault,
     getSecrets: () => [loadApiKey(safeStorage).key],
+    // Same model the rest of the app uses; offline mock when no key is saved.
+    getModelRoute: () =>
+      hasApiKey(safeStorage)
+        ? { provider: LIVE_PROVIDER, model: DEFAULT_MODEL }
+        : { provider: MOCK_PROVIDER, model: MOCK_MODEL },
   });
   return advancedHost;
 }
@@ -465,24 +472,22 @@ ipcMain.handle('advanced-approval-reply', (e, opts) => {
 });
 
 ipcMain.handle('advanced-run', async (e, prompt) => {
+  const { isLocal } = require('./agent/advanced/origin');
+  if (!isLocal(classifyIpcOrigin(e, mainWindow))) return { ok: false, code: 'REMOTE_FORBIDDEN', error: '高级档任务只能在本机发起' };
   const prefs = readPrefs();
   if (!prefs.privacyAccepted && hasApiKey(safeStorage)) {
     return { ok: false, error: '请先同意隐私说明', needPrivacy: true };
   }
   if (!advanced.getState().enabled) return { ok: false, error: '高级档未开启' };
   if (!activeVault) return { ok: false, error: '未打开 vault' };
+  const text = typeof prompt === 'string' ? prompt.trim() : '';
+  if (!text) return { ok: false, error: '请输入任务' };
   try {
     const host = await getAdvancedHost();
-    // Advanced chat: for v0.2 plugin rewrite, surface that tools run via approval.
-    // Model-driven tool loops can be wired once a mock/live provider is selected;
-    // the sidebar still uses default-mode ask for plain Q&A.
-    await host.ensureStarted();
-    return {
-      ok: true,
-      answer: '高级档已就绪（组合根插件）。请通过工具调用触发审批；默认档提问仍可用侧栏「提问」。',
-      toolCalls: [],
-      runtime: host.status(),
-    };
+    // Real run: prompt -> mounted dsh agent -> tool calls gated by
+    // kvd-approval-bridge (modal per call) -> final answer.
+    const res = await host.run({ prompt: text });
+    return advancedRunResult(res, host.status());
   } catch (err) {
     return { ok: false, error: err.message || String(err) };
   }

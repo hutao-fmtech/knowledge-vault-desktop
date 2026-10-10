@@ -462,15 +462,24 @@ async function initAdvanced() {
   document.getElementById('btn-advanced-run').addEventListener('click', async () => {
     const prompt = adv.input.value.trim();
     if (!prompt) return;
+    const btn = document.getElementById('btn-advanced-run');
+    btn.disabled = true;
     els.agentAnswer.textContent = '高级档运行中…（工具调用会先请求审批）';
-    const res = await window.vaultApi.advancedRun(prompt);
+    let res;
+    try {
+      res = await window.vaultApi.advancedRun(prompt);
+    } finally {
+      btn.disabled = false;
+    }
     if (!res.ok) {
       els.agentAnswer.textContent = res.error || res.code;
       if (res.needPrivacy) els.agentPrivacy.classList.remove('hidden');
       return;
     }
-    const calls = (res.toolCalls || []).map((c) => c.name).join(', ');
-    els.agentAnswer.textContent = `${res.answer || ''}${calls ? `\n\n[工具调用：${calls}]` : ''}`;
+    const calls = (res.toolCalls || [])
+      .map((c) => `· ${c.name}${c.command ? `：${c.command}` : ''}${c.isError ? '（被拒绝/失败）' : ''}`)
+      .join('\n');
+    els.agentAnswer.textContent = `${res.answer || ''}${calls ? `\n\n工具调用：\n${calls}` : ''}`;
     els.agentAnswer.scrollIntoView({ block: 'nearest' });
   });
 

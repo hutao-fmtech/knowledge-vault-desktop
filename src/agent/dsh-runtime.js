@@ -1,5 +1,7 @@
 'use strict';
 
+const { DEFAULT_MODEL } = require('./models');
+
 /**
  * Default / model-only DeepSeek Harness LLM access.
  *
@@ -56,7 +58,7 @@ async function ensureCredential(ctx, apiKey) {
  * Stream one model-only completion through dsh-llm.
  * @returns {Promise<{ ok: true, text: string, provider: string, model: string } | { ok: false, error: string, code?: string }>}
  */
-async function streamText({ apiKey, system, user, model = 'deepseek-flash' }) {
+async function streamText({ apiKey, system, user, model = DEFAULT_MODEL }) {
   const { ctx, BlockAssembler, createSystemMessage, createUserMessage } = await boot();
   const ensured = await ensureCredential(ctx, apiKey);
   if (!ensured.ok) return ensured;
