@@ -2,16 +2,22 @@
   "name": "@kvd/ipc-bridge",
   "version": "0.2.2",
   "private": true,
+  "type": "module",
   "description": "kvd-ipc-bridge: ipc service bridging Cordis to Electron ipcMain/webContents.",
   "license": "MIT",
   "exports": {
-    ".": "./src/index.mjs"
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    }
   },
   "files": [
-    "src"
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "lib/**/*.d.ts.map"
   ],
   "scripts": {
-    "test": "node --test"
+    "test": "vitest run"
   },
   "dependencies": {
     "@deepseek-ai/cordis": "4.0.4",
@@ -24,5 +30,8 @@
     "electron": {
       "optional": true
     }
+  },
+  "devDependencies": {
+    "vitest": "4.1.8"
   }
 }

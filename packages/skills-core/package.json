@@ -2,15 +2,24 @@
   "name": "@kvd/skills-core",
   "version": "0.2.2",
   "private": true,
+  "type": "module",
   "description": "Pure helpers shared by @kvd/skills and @kvd/llm-mock (breaks the former import cycle).",
   "license": "MIT",
   "exports": {
-    ".": "./src/index.mjs"
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    }
   },
   "files": [
-    "src"
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "lib/**/*.d.ts.map"
   ],
   "scripts": {
-    "test": "node --test"
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "4.1.8"
   }
 }

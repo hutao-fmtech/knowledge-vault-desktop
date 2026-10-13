@@ -2,14 +2,15 @@
   "name": "knowledge-vault-desktop",
   "version": "0.2.2",
   "description": "Knowledge Vault Desktop — one-click Obsidian-compatible PARA/MOC/Zettelkasten vault creator",
-  "main": "src/main.js",
+  "main": "lib/main.js",
   "author": "hutao-fmtech",
   "license": "MIT",
   "private": true,
+  "type": "module",
   "scripts": {
-    "start": "electron .",
-    "dev": "electron .",
-    "test": "node --test",
+    "start": "pnpm -w run build && electron .",
+    "dev": "pnpm -w run build && electron .",
+    "test": "vitest run",
     "pack": "node ../../scripts/build-desktop.mjs --dir",
     "dist": "node ../../scripts/build-desktop.mjs",
     "dist:win": "node ../../scripts/build-desktop.mjs --win",
@@ -29,9 +30,15 @@
       "buildResources": "build"
     },
     "files": [
-      "src/**/*",
+      "lib/**/*.js",
+      "lib/**/*.cjs",
+      "lib/renderer/**",
       "cordis.yml",
-      "package.json"
+      "package.json",
+      "!lib/**/*.d.ts",
+      "!lib/**/*.d.cts",
+      "!lib/**/*.map",
+      "!lib/**/.tsbuildinfo"
     ],
     "extraResources": [],
     "asar": true,
@@ -87,7 +94,7 @@
     "forceCodeSigning": false,
     "publish": null,
     "asarUnpack": [
-      "src/runtime/**",
+      "lib/runtime/**",
       "node_modules/@deepseek-ai/**",
       "node_modules/@cordisjs/**",
       "node_modules/cosmokit/**"
@@ -135,7 +142,9 @@
     "js-yaml": "4.3.2"
   },
   "devDependencies": {
+    "@types/js-yaml": "4.0.9",
     "electron": "39.8.10",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "vitest": "4.1.8"
   }
 }

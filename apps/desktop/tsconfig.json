@@ -1,0 +1,56 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "lib",
+    "rootDir": "src",
+    "tsBuildInfoFile": "lib/.tsbuildinfo"
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.cts"
+  ],
+  "exclude": [
+    "src/renderer/**"
+  ],
+  "references": [
+    {
+      "path": "../../packages/advanced"
+    },
+    {
+      "path": "../../packages/ipc-bridge"
+    },
+    {
+      "path": "../../packages/keychain"
+    },
+    {
+      "path": "../../packages/llm-mock"
+    },
+    {
+      "path": "../../packages/prefs"
+    },
+    {
+      "path": "../../packages/privacy"
+    },
+    {
+      "path": "../../packages/proposals"
+    },
+    {
+      "path": "../../packages/search"
+    },
+    {
+      "path": "../../packages/shared"
+    },
+    {
+      "path": "../../packages/skills"
+    },
+    {
+      "path": "../../packages/template"
+    },
+    {
+      "path": "../../packages/vault"
+    },
+    {
+      "path": "./src/renderer"
+    }
+  ]
+}

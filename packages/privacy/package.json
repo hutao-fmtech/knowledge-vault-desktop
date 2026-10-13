@@ -2,15 +2,29 @@
   "name": "@kvd/privacy",
   "version": "0.2.2",
   "private": true,
+  "type": "module",
   "description": "kvd-privacy: blocks live (non-mock) LLM routes until the user accepts the privacy notice.",
   "license": "MIT",
   "exports": {
-    ".": "./src/index.mjs"
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    }
   },
   "files": [
-    "src"
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "lib/**/*.d.ts.map"
   ],
   "scripts": {
-    "test": "node --test"
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-llm": "0.2.0-rc.2",
+    "@kvd/prefs": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "4.1.8"
   }
 }

@@ -26,6 +26,12 @@ const require = createRequire(path.join(ROOT, 'package.json'));
 const builderCli = require.resolve('electron-builder/cli.js');
 const isWin = process.platform === 'win32';
 
+// Electron loads and electron-builder packs the tsc output (lib/), never src/.
+execFileSync(isWin ? 'pnpm.cmd' : 'pnpm', ['run', 'build'], { cwd: ROOT, stdio: 'inherit', shell: isWin });
+for (const must of ['apps/desktop/lib/main.js', 'apps/desktop/lib/preload.cjs', 'apps/desktop/lib/renderer/index.html']) {
+  if (!fs.existsSync(path.join(ROOT, must))) throw new Error(`build output missing: ${must}`);
+}
+
 fs.rmSync(STAGE, { recursive: true, force: true });
 fs.mkdirSync(path.dirname(STAGE), { recursive: true });
 execFileSync(isWin ? 'pnpm.cmd' : 'pnpm', ['--filter', 'knowledge-vault-desktop', '--prod', 'deploy', STAGE], {
@@ -34,7 +40,7 @@ execFileSync(isWin ? 'pnpm.cmd' : 'pnpm', ['--filter', 'knowledge-vault-desktop'
   shell: isWin,
 });
 // Never ship a stale local build or tests from the stage.
-for (const junk of ['dist', 'test']) fs.rmSync(path.join(STAGE, junk), { recursive: true, force: true });
+for (const junk of ['dist', 'test', 'src']) fs.rmSync(path.join(STAGE, junk), { recursive: true, force: true });
 // pnpm deploy leaves `workspace:*` specs in the staged manifests; electron-builder's
 // dependency walker does not understand them and silently drops transitive
 // workspace deps (e.g. @kvd/skills-core via @kvd/llm-mock). Pin them to the

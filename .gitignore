@@ -8,3 +8,6 @@ Thumbs.db
 .vscode/
 .stage/
 apps/*/dist/
+# tsc -b output (packages/*/lib, apps/desktop/lib) — built in CI, never committed
+lib/
+*.tsbuildinfo

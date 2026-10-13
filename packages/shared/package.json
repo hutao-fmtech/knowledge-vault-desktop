@@ -2,16 +2,28 @@
   "name": "@kvd/shared",
   "version": "0.2.2",
   "private": true,
+  "type": "module",
   "description": "Shared constants: model routes and the app config directory (outside any vault).",
   "license": "MIT",
   "exports": {
-    "./models": "./src/models.mjs",
-    "./config-dir": "./src/config-dir.mjs"
+    "./models": {
+      "types": "./lib/models.d.ts",
+      "default": "./lib/models.js"
+    },
+    "./config-dir": {
+      "types": "./lib/config-dir.d.ts",
+      "default": "./lib/config-dir.js"
+    }
   },
   "files": [
-    "src"
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "lib/**/*.d.ts.map"
   ],
   "scripts": {
-    "test": "node --test"
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "4.1.8"
   }
 }

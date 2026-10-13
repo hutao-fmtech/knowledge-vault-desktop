@@ -73,3 +73,26 @@ test('sourceImports sees static, export-from, dynamic, require and createRequire
   ).map((i) => i.specifier);
   assert.deepEqual(found, ['a', 'b', 'c', 'e']);
 });
+
+test('.ts sources: type-only imports (import type / export type / typeof import()) must be declared deps', () => {
+  const root = fixture({
+    ...base,
+    'packages/a/package.json': pkg('@kvd/a'),
+    'packages/a/src/index.ts': "import type { B } from '@kvd/b';\nexport type { C } from 'types-only-c';\nexport type E = typeof import('electron-ish');\nexport const x: B | undefined = undefined;",
+  });
+  const errs = checkBoundaries(root).join('\n');
+  assert.match(errs, /index\.ts:1: undeclared dependency: @kvd\/b/);
+  assert.match(errs, /index\.ts:2: undeclared dependency: types-only-c/);
+  assert.match(errs, /index\.ts:3: undeclared dependency: electron-ish/);
+});
+
+test('.ts sources: declared type-only dep passes; module augmentation target counts', () => {
+  const imports = sourceImports("import type {} from '@kvd/b';\ndeclare module '@deepseek-ai/cordis' { interface Context { x: 1 } }", 'x.ts').map((i) => i.specifier);
+  assert.deepEqual(imports, ['@kvd/b', '@deepseek-ai/cordis']);
+  const root = fixture({
+    ...base,
+    'packages/a/package.json': pkg('@kvd/a', { dependencies: { '@kvd/b': 'workspace:*' } }),
+    'packages/a/src/index.ts': "import type {} from '@kvd/b';",
+  });
+  assert.deepEqual(checkBoundaries(root), []);
+});

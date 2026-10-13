@@ -19,9 +19,9 @@ delete process.env.DEEPSEEK_API_KEY;
 
 const ROOT = path.join(__dirname, '..');
 const repo = require('./lib/repo');
-const { createAdvancedController } = require('../packages/advanced/src/controller.js');
-const { classifyIpcOrigin, localOrigin, remoteOrigin, RENDERER_URL } = require('../packages/advanced/src/origin.js');
-const { createToolLog } = require('../packages/advanced/src/tool-log.js');
+const { createAdvancedController } = require('../packages/advanced/lib/controller.js');
+const { classifyIpcOrigin, localOrigin, remoteOrigin, RENDERER_URL } = require('../packages/advanced/lib/origin.js');
+const { createToolLog } = require('../packages/advanced/lib/tool-log.js');
 
 const FAKE_KEY = ['sk', 'offlinesmoke', 'NOTAREALKEY', '0123456789'].join('-');
 
@@ -156,7 +156,7 @@ async function partA(tmp) {
   ok(classifyIpcOrigin({ sender: wc, senderFrame: { url: RENDERER_URL, parent: {} } }, win).kind === 'remote', 'IPC from a subframe is rejected');
   ok(classifyIpcOrigin({ sender: wc, senderFrame: { url: RENDERER_URL } }, null).kind === 'remote', 'IPC without a main window is rejected');
 
-  const mainSrc = fs.readFileSync(path.join(repo.APP, 'src', 'main.js'), 'utf8');
+  const mainSrc = fs.readFileSync(path.join(repo.APP, 'src', 'main.ts'), 'utf8');
   for (const ch of ['advanced-enable', 'advanced-set-policy', 'advanced-approval-reply']) {
     const re = new RegExp(`ipcMain\\.handle\\('${ch}'[\\s\\S]{0,300}?classifyIpcOrigin\\(`);
     ok(re.test(mainSrc), `main.js '${ch}' handler classifies the IPC origin before acting`);
@@ -209,7 +209,7 @@ async function partA(tmp) {
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
       const p = path.join(d, e.name);
       if (e.isDirectory()) walkSrc(p);
-      else if (/\.(c|m)?js$/.test(e.name)) {
+      else if (/\.(c|m)?[jt]s$/.test(e.name)) {
         const code = fs.readFileSync(p, 'utf8');
         if (/['"`]sdk-minimal['"`]/.test(code)) srcHits.push(p);
         if (/embedded-agent-kit/.test(code)) srcHits.push(p);
@@ -220,7 +220,7 @@ async function partA(tmp) {
   for (const d of repo.sourceRoots()) walkSrc(d);
   ok(srcHits.length === 0, 'no sdk-minimal / --profile sdk / embedded-agent-kit anywhere in apps/*/src or packages/*/src');
 
-  const composition = fs.readFileSync(path.join(repo.APP, 'src', 'runtime', 'composition.mjs'), 'utf8');
+  const composition = fs.readFileSync(path.join(repo.APP, 'src', 'runtime', 'composition.ts'), 'utf8');
   const cordisYml = fs.readFileSync(path.join(repo.APP, 'cordis.yml'), 'utf8');
   ok(/ADVANCED_ROWS/.test(composition), 'composition.mjs declares ADVANCED_ROWS');
   ok(/cordis\.yml/.test(composition) && !/@deepseek-ai\/dsh-|@kvd\//.test(composition.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')), 'composition.mjs loads cordis.yml and hardcodes no plugin package');
@@ -228,20 +228,20 @@ async function partA(tmp) {
   ok(/name: '@deepseek-ai\/dsh-sandbox-policy'\s*\n\s*config:[\s\S]{0,200}?mode:\s*read-only/.test(cordisYml), 'cordis.yml sandbox-policy row declares read-only');
   ok(!/danger-full-access/.test(composition) && !/danger-full-access/.test(cordisYml), 'composition never selects danger-full-access');
   {
-    const comp = await import('../apps/desktop/src/runtime/composition.mjs');
+    const comp = await import('../apps/desktop/lib/runtime/composition.js');
     const sp = comp.advancedRowsFor({ workspaceRoot: '/tmp/x' }).find((r) => r.id === 'dsh-sandbox-policy');
     ok(sp && sp.config.mode === 'read-only' && sp.config.workspaceRoot === '/tmp/x', 'advancedRowsFor pins read-only + vault root');
     ok(comp.DEFAULT_ROWS.every((r) => !/dsh-tool|dsh-bash|dsh-sandbox|@kvd\/advanced/.test(r.name)), 'default-mode rows mount no tool / sandbox / advanced plugins');
   }
 
-  for (const f of ['packages/skills/src/index.mjs', 'apps/desktop/src/runtime/boot.mjs']) {
+  for (const f of ['packages/skills/src/index.ts', 'apps/desktop/src/runtime/boot.ts']) {
     const code = fs.readFileSync(path.join(ROOT, f), 'utf8');
     ok(!/dsh-sdk-client|dsh-tool-|dsh-bash|advanced\//.test(code), `default-mode ${f} imports no tool packages, SDK client, or advanced runtime`);
   }
 
   // ---- Bug A: search snippets are sliced by code point, around the BODY match ----
   {
-    const { searchVault, makeSnippet } = await import('../packages/search/src/index.mjs');
+    const { searchVault, makeSnippet } = await import('../packages/search/lib/index.js');
     const sv = path.join(tmp, 'vault-search');
     fs.mkdirSync(path.join(sv, '01-收件箱'), { recursive: true });
     // 219 BMP chars + emoji: a UTF-16 slice(0, 220) would end on a lone high surrogate.
@@ -275,16 +275,16 @@ async function partA(tmp) {
 
   // ---- Model ID consistency (Bug B) ----
   {
-    const { DEFAULT_MODEL, APP_MODELS } = await import('../packages/shared/src/models.mjs');
+    const { DEFAULT_MODEL, APP_MODELS } = await import('../packages/shared/lib/models.js');
     ok(APP_MODELS.includes(DEFAULT_MODEL) && DEFAULT_MODEL === 'deepseek-flash', 'app default model is deepseek-flash, one of the listed models');
-    const hostSrc = fs.readFileSync(path.join(repo.PACKAGES, 'advanced', 'src', 'host.mjs'), 'utf8');
+    const hostSrc = fs.readFileSync(path.join(repo.PACKAGES, 'advanced', 'src', 'host.ts'), 'utf8');
     ok(!/model:\s*['"]deepseek-chat['"]/.test(hostSrc) && /DEFAULT_MODEL/.test(hostSrc), 'advanced host uses the app model constant, not deepseek-chat');
     const offenders = [];
     const walk = (d) => {
       for (const e of fs.readdirSync(d, { withFileTypes: true })) {
         const p = path.join(d, e.name);
         if (e.isDirectory()) walk(p);
-        else if (/\.(c|m)?js$/.test(e.name) && /['"`]deepseek-chat['"`]/.test(fs.readFileSync(p, 'utf8'))) offenders.push(p);
+        else if (/\.(c|m)?[jt]s$/.test(e.name) && /['"`]deepseek-chat['"`]/.test(fs.readFileSync(p, 'utf8'))) offenders.push(p);
       }
     };
     for (const d of repo.sourceRoots()) walk(d);
@@ -295,7 +295,7 @@ async function partA(tmp) {
 
   // ---- Bug C: approval bridge escalation guard (unit, fake ctx) ----
   {
-    const bridge = await import('../packages/advanced/src/approval-bridge.mjs');
+    const bridge = await import('../packages/advanced/lib/approval-bridge.js');
     ok(bridge.findEscalation({ command: 'x', sandbox_permissions: 'workspace-write' }) === 'workspace-write', 'findEscalation: sandbox_permissions in args');
     ok(bridge.findEscalation('{"command":"x","sandbox_permissions":"danger-full-access"}') === 'danger-full-access', 'findEscalation: JSON-string args');
     ok(bridge.findEscalation({ command: 'x', sandbox_permissions: 'read-only' }) === null, 'findEscalation: read-only is not an escalation');
@@ -337,7 +337,7 @@ async function partA(tmp) {
   }
 
   // Default mode: tools service must not exist on the default composition
-  const { bootRuntime, disposeRuntime, isAdvancedMounted } = await import('../apps/desktop/src/runtime/boot.mjs');
+  const { bootRuntime, disposeRuntime, isAdvancedMounted } = await import('../apps/desktop/lib/runtime/boot.js');
   // Use a fresh process-level check via dynamic import of composition only —
   // bootRuntime is singleton; Part B will mount advanced. Here only assert rows.
   ok(isAdvancedMounted() === false, 'advanced fiber is not mounted before enable');
@@ -353,10 +353,10 @@ async function partB(tmp) {
   }
   console.log(`  using Node ${process.versions.node}`);
 
-  const { createAdvancedHost } = await import('../packages/advanced/src/host.mjs');
-  const { isAdvancedMounted, unmountAdvanced, getRuntime } = await import('../apps/desktop/src/runtime/boot.mjs');
-  const { proposeCreate, applyProposal } = await import('../packages/proposals/src/index.mjs');
-  const { advancedRunResult } = require('../packages/advanced/src/run-result.js');
+  const { createAdvancedHost } = await import('../packages/advanced/lib/host.js');
+  const { isAdvancedMounted, unmountAdvanced, getRuntime } = await import('../apps/desktop/lib/runtime/boot.js');
+  const { proposeCreate, applyProposal } = await import('../packages/proposals/lib/index.js');
+  const { advancedRunResult } = require('../packages/advanced/lib/run-result.js');
 
   const vault = path.join(tmp, 'vault-b');
   fs.mkdirSync(path.join(vault, '01-收件箱'), { recursive: true });
@@ -371,7 +371,7 @@ async function partB(tmp) {
   let answer = 'deny';
   const pending = new Map();
 
-  const runtimeHandle = await import('../apps/desktop/src/runtime/boot.mjs');
+  const runtimeHandle = await import('../apps/desktop/lib/runtime/boot.js');
   const host = createAdvancedHost({
     runtime: runtimeHandle,
     controller: ctl,
@@ -557,7 +557,7 @@ async function partB(tmp) {
 
 async function partC(tmp, mock) {
   console.log('Part C — default-mode ask over the real DeepSeek transport (local mock server, offline)');
-  const { getRuntime } = await import('../apps/desktop/src/runtime/boot.mjs');
+  const { getRuntime } = await import('../apps/desktop/lib/runtime/boot.js');
   const { ctx } = await getRuntime();
   const { credentialRef } = await import('@deepseek-ai/dsh-credentials');
   const ref = credentialRef('DEEPSEEK_API_KEY');

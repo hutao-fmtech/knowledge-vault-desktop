@@ -2,20 +2,30 @@
   "name": "@kvd/llm-mock",
   "version": "0.2.2",
   "private": true,
+  "type": "module",
   "description": "kvd-llm-mock: deterministic offline llm adapter (provider kvd-mock).",
   "license": "MIT",
   "exports": {
-    ".": "./src/index.mjs"
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    }
   },
   "files": [
-    "src"
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "lib/**/*.d.ts.map"
   ],
   "scripts": {
-    "test": "node --test"
+    "test": "vitest run"
   },
   "dependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
     "@deepseek-ai/dsh-llm": "0.2.0-rc.2",
     "@deepseek-ai/schemastery": "3.18.4",
     "@kvd/skills-core": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "4.1.8"
   }
 }

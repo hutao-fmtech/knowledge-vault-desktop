@@ -5,8 +5,12 @@ on:
     tags: ["v*"]
   workflow_dispatch:
     inputs:
+      publish:
+        description: "Publish a GitHub Release. false = package-only (build + launch-smoke installers as artifacts; no tag, no release)."
+        type: boolean
+        default: false
       tag:
-        description: "Existing tag to attach installers to (e.g. v0.1.0). Leave empty to only build artifacts."
+        description: "Existing tag to attach installers to (e.g. v0.2.2). Only used when publish=true."
         required: false
 
 permissions:
@@ -36,9 +40,13 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: build (tsc -b) — the installers package this compiled output
+        run: pnpm run build
       - run: pnpm run smoke
 
   build:
+    # Plain job name: multi-line matrix values in the default name break `gh run view --log`.
+    name: build-${{ matrix.os }}
     needs: smoke
     strategy:
       fail-fast: false
@@ -48,15 +56,23 @@ jobs:
             target: --win
             artifacts: |
               apps/desktop/dist/*.exe
+              apps/desktop/dist/*-portable.zip
           - os: macos-latest
             target: --mac
             artifacts: |
               apps/desktop/dist/*.dmg
               apps/desktop/dist/*-mac.zip
+          - os: ubuntu-latest
+            target: --linux
+            artifacts: |
+              apps/desktop/dist/*.AppImage
     runs-on: ${{ matrix.os }}
     env:
       # Unsigned internal-test builds (M1); signing/notarization tracked separately.
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -64,9 +80,42 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run smoke
-      - run: node scripts/build-desktop.mjs ${{ matrix.target }} --publish never
+      - name: build (tsc -b)
+        run: pnpm run build
+      # The Node smoke's advanced Part B drives the real dsh bash sandbox. On hosted
+      # Windows runners that sandbox's bash cannot read the vault (Bash/E_ACCESSDENIED),
+      # so AC3 cannot pass there; before R2 Part B was silently skipped on every OS
+      # (no Node 22). Full smoke runs in the `smoke` job (Linux) and here on macOS;
+      # Windows is covered by the packaged launch smoke below.
+      - name: smoke against the compiled output
+        if: runner.os != 'Windows'
+        run: pnpm run smoke
+      - name: installers (build-desktop runs tsc -b, stages lib/ via pnpm deploy, electron-builder)
+        run: node scripts/build-desktop.mjs ${{ matrix.target }} --publish never
+      - name: Windows portable zip (name from apps/desktop/package.json version)
+        if: runner.os == 'Windows'
+        run: node scripts/zip-win-portable.js
+      - name: launch smoke (packaged app headless; version == apps/desktop/package.json; plugins 28/28)
+        run: node scripts/launch-smoke.mjs
+      - name: launch smoke mac x64 (Rosetta)
+        if: runner.os == 'macOS'
+        run: |
+          if /usr/bin/pgrep -q oahd || arch -x86_64 /usr/bin/true 2>/dev/null; then
+            node scripts/launch-smoke.mjs --arch x64
+          else
+            echo "::warning::Rosetta unavailable on this runner; x64 mac build packaged but not launched"
+          fi
+      - name: installer names carry the app version
+        run: |
+          V=$(node -p "require('./apps/desktop/package.json').version")
+          ls -la apps/desktop/dist
+          N=$(ls apps/desktop/dist | grep -E '\.(exe|dmg|zip|AppImage)$' | grep -c -- "$V" || true)
+          T=$(ls apps/desktop/dist | grep -cE '\.(exe|dmg|zip|AppImage)$' || true)
+          echo "installers with version $V: $N/$T"
+          [ "$T" -gt 0 ] && [ "$N" -eq "$T" ]
       - uses: actions/upload-artifact@v4
         with:
           name: installers-${{ matrix.os }}
@@ -75,7 +124,8 @@ jobs:
 
   release:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.tag != ''
+    # Package-only dispatches (publish=false, the default) stop after build: no tag, no release.
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish && inputs.tag != '')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -86,7 +136,7 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           ls -la out
           if ! gh release view "$TAG" >/dev/null 2>&1; then

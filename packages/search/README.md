@@ -8,7 +8,7 @@ Mounted from `apps/desktop/cordis.yml`.
 
 | Specifier | File |
 | --- | --- |
-| `@kvd/search` | `./src/index.mjs` |
+| `@kvd/search` | `./src/index.ts` → `./lib/index.js` |
 
 Only these entry points may be imported by other workspace packages
 (`scripts/check-boundaries.mjs` enforces it).

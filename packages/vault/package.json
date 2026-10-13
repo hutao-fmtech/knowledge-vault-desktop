@@ -2,21 +2,36 @@
   "name": "@kvd/vault",
   "version": "0.2.2",
   "private": true,
+  "type": "module",
   "description": "kvd-vault Cordis service (vault root, read-only path policy) + vault creation from @kvd/template.",
   "license": "MIT",
   "exports": {
-    ".": "./src/index.mjs",
-    "./create": "./src/create.js",
-    "./sanitize": "./src/sanitize.js"
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./create": {
+      "types": "./lib/create.d.ts",
+      "default": "./lib/create.js"
+    },
+    "./sanitize": {
+      "types": "./lib/sanitize.d.ts",
+      "default": "./lib/sanitize.js"
+    }
   },
   "files": [
-    "src"
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "lib/**/*.d.ts.map"
   ],
   "scripts": {
-    "test": "node --test"
+    "test": "vitest run"
   },
   "dependencies": {
     "@deepseek-ai/cordis": "4.0.4",
     "@deepseek-ai/schemastery": "3.18.4"
+  },
+  "devDependencies": {
+    "vitest": "4.1.8"
   }
 }

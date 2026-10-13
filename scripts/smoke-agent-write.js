@@ -6,7 +6,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { createVault } = require('../packages/vault/src/create.js');
+const { createVault } = require('../packages/vault/lib/create.js');
 const repo = require('./lib/repo');
 
 let asserts = 0;
@@ -22,10 +22,10 @@ function assert(cond, msg) {
     proposeMove,
     applyProposal,
     discardProposal,
-  } = await import('../packages/proposals/src/index.mjs');
-  const { resolveVaultPath } = await import('../packages/vault/src/index.mjs');
-  const { createSkillsEngine } = await import('../packages/skills/src/index.mjs');
-  const { searchVault, SEARCH_EXCLUDED_TOP } = await import('../packages/search/src/index.mjs');
+  } = await import('../packages/proposals/lib/index.js');
+  const { resolveVaultPath } = await import('../packages/vault/lib/index.js');
+  const { createSkillsEngine } = await import('../packages/skills/lib/index.js');
+  const { searchVault, SEARCH_EXCLUDED_TOP } = await import('../packages/search/lib/index.js');
   // Offline skills engine over the pure plugin helpers (what the old createMockEngine facade did).
   const createMockEngine = () =>
     createSkillsEngine(
@@ -40,7 +40,7 @@ function assert(cond, msg) {
       },
       { id: 'mock', backend: 'mock' },
     );
-  const templateRoot = require('../packages/template/src/index.js').templateRoot;
+  const templateRoot = require('../packages/template/lib/index.js').templateRoot;
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kvd-agent-smoke-'));
   const created = createVault({ parentDir: tmp, rawName: 'Agent_Smoke', templateRoot });
   assert(created.ok, created.error || 'createVault failed');
@@ -130,7 +130,7 @@ function assert(cond, msg) {
 
   
   // dsh-llm in-process mount via composition root (no network)
-  const { smokeMount } = await import('../apps/desktop/src/runtime/boot.mjs');
+  const { smokeMount } = await import('../apps/desktop/lib/runtime/boot.js');
   const mount = await smokeMount();
   assert(mount.ok && mount.providers.includes('deepseek-official'), 'dsh-llm mount');
   assert(mount.hasCredentials, 'kvd-keychain provides credentials');
@@ -145,16 +145,16 @@ function assert(cond, msg) {
   delete process.env.DEEPSEEK_API_KEY;
   assert(process.env.DEEPSEEK_API_KEY === undefined, 'env key must start undefined');
 
-  const runtimeSrc = ['apps/desktop/src/runtime/boot.mjs', 'packages/skills/src/index.mjs', 'packages/keychain/src/index.mjs']
+  const runtimeSrc = ['apps/desktop/src/runtime/boot.ts', 'packages/skills/src/index.ts', 'packages/keychain/src/index.ts']
     .map((f) => fs.readFileSync(path.join(repo.ROOT, f), 'utf8'))
     .join('\n');
   assert(!/process\.env\.DEEPSEEK_API_KEY\s*=/.test(runtimeSrc), 'runtime (boot/kvd-skills/kvd-keychain) must not assign DEEPSEEK_API_KEY');
 
-  const mainSrc = fs.readFileSync(path.join(repo.APP, 'src', 'main.js'), 'utf8');
+  const mainSrc = fs.readFileSync(path.join(repo.APP, 'src', 'main.ts'), 'utf8');
   assert(/agent-sort[\s\S]*needPrivacy/.test(mainSrc), 'G1: agent-sort must check privacy');
   assert(/agent-card[\s\S]*needPrivacy/.test(mainSrc), 'G1: agent-card must check privacy');
 
-  const { getRuntime, disposeRuntime, wasDisposeCalled } = await import('../apps/desktop/src/runtime/boot.mjs');
+  const { getRuntime, disposeRuntime, wasDisposeCalled } = await import('../apps/desktop/lib/runtime/boot.js');
   const { credentialRef } = await import('@deepseek-ai/dsh-credentials');
   const llmMod = await import('@deepseek-ai/dsh-llm');
   const { BlockAssembler, createSystemMessage, createUserMessage } = llmMod;
@@ -535,7 +535,7 @@ function assert(cond, msg) {
   }
 
   // cordis.yml is the composition source (no hardcoded row table)
-  const comp = await import('../apps/desktop/src/runtime/composition.mjs');
+  const comp = await import('../apps/desktop/lib/runtime/composition.js');
   assert(comp.DEFAULT_ROWS.length === 11 && comp.ADVANCED_ROWS.length === 17, 'cordis.yml declares 11 default + 17 advanced rows');
   for (const row of [...comp.DEFAULT_ROWS, ...comp.ADVANCED_ROWS]) {
     assert(Object.prototype.hasOwnProperty.call(pkg.dependencies, row.name.split('/').slice(0, 2).join('/')), `cordis.yml row ${row.id} -> ${row.name} is an apps/desktop dependency`);
