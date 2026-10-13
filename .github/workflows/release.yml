@@ -23,6 +23,12 @@ jobs:
       ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
     steps:
       - uses: actions/checkout@v4
+      - name: Release notes mention the tagged version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          # Guard against publishing stale notes (v0.2.3 initially shipped v0.2.2's).
+          grep -qF "$GITHUB_REF_NAME" .github/release-notes.md || {
+            echo "::error::.github/release-notes.md does not mention $GITHUB_REF_NAME; update it before tagging"; exit 1; }
       - name: Verify tag matches package.json version
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
