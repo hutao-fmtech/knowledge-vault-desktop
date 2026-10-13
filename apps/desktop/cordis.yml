@@ -83,8 +83,10 @@
         # Always read-only; composition.mjs re-pins this at mount time and
         # fills workspaceRoot with the open vault.
         mode: read-only
-    - id: dsh-bash-sandbox
-      name: '@deepseek-ai/dsh-bash-sandbox'
+    # dsh-bash-sandbox with an explicit Git Bash on Windows (issue #18);
+    # identical to upstream elsewhere.
+    - id: kvd-bash-sandbox
+      name: '@kvd/advanced/bash-sandbox'
     - id: dsh-shell-env
       name: '@deepseek-ai/dsh-shell-env'
     - id: dsh-jobs-local
