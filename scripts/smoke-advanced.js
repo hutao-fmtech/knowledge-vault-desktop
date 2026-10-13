@@ -224,14 +224,14 @@ async function partA(tmp) {
   ok(/mode:\s*['"]read-only['"]/.test(composition), 'advanced sandbox-policy row pins read-only');
   ok(!/danger-full-access/.test(composition), 'composition never selects danger-full-access');
 
-  for (const f of ['engine.js', 'dsh-runtime.js']) {
-    const code = fs.readFileSync(path.join(ROOT, 'src', 'agent', f), 'utf8');
+  for (const f of ['plugins/kvd-skills.mjs', 'boot.mjs']) {
+    const code = fs.readFileSync(path.join(ROOT, 'src', 'runtime', f), 'utf8');
     ok(!/dsh-sdk-client|dsh-tool-|dsh-bash|advanced\//.test(code), `default-mode ${f} imports no tool packages, SDK client, or advanced runtime`);
   }
 
   // ---- Bug A: search snippets are sliced by code point, around the BODY match ----
   {
-    const { searchVault, makeSnippet } = require('../src/agent/search');
+    const { searchVault, makeSnippet } = await import('../src/runtime/plugins/kvd-search.mjs');
     const sv = path.join(tmp, 'vault-search');
     fs.mkdirSync(path.join(sv, '01-收件箱'), { recursive: true });
     // 219 BMP chars + emoji: a UTF-16 slice(0, 220) would end on a lone high surrogate.
@@ -265,7 +265,7 @@ async function partA(tmp) {
 
   // ---- Model ID consistency (Bug B) ----
   {
-    const { DEFAULT_MODEL, APP_MODELS } = require('../src/agent/models');
+    const { DEFAULT_MODEL, APP_MODELS } = await import('../src/runtime/shared/models.mjs');
     ok(APP_MODELS.includes(DEFAULT_MODEL) && DEFAULT_MODEL === 'deepseek-flash', 'app default model is deepseek-flash, one of the listed models');
     const hostSrc = fs.readFileSync(path.join(ROOT, 'src', 'agent', 'advanced', 'host.mjs'), 'utf8');
     ok(!/model:\s*['"]deepseek-chat['"]/.test(hostSrc) && /DEFAULT_MODEL/.test(hostSrc), 'advanced host uses the app model constant, not deepseek-chat');
@@ -345,7 +345,7 @@ async function partB(tmp) {
 
   const { createAdvancedHost } = await import('../src/agent/advanced/host.mjs');
   const { isAdvancedMounted, unmountAdvanced, getRuntime } = await import('../src/runtime/boot.mjs');
-  const { proposeCreate, applyProposal } = require('../src/agent/proposals');
+  const { proposeCreate, applyProposal } = await import('../src/runtime/plugins/kvd-proposals.mjs');
   const { advancedRunResult } = require('../src/agent/advanced/run-result');
 
   const vault = path.join(tmp, 'vault-b');

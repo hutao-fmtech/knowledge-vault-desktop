@@ -1,19 +1,68 @@
 /**
- * kvd-keychain — CredentialProvider backed by keystore.js (safeStorage or
+ * kvd-keychain — CredentialProvider backed by the key file helpers below (safeStorage or
  * app-config file mode 0600). Never stores keys in the vault or process.env.
  *
  * Records API (R8): empty / unsupported in v0.2.
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import { createRequire } from 'node:module';
 import CredentialProvider, { credentialRef } from '@deepseek-ai/dsh-credentials';
+import { configDir } from '../shared/config-dir.mjs';
 
 const require = createRequire(import.meta.url);
-const {
-  loadApiKey,
-  saveApiKey,
-  clearApiKey,
-  hasApiKey,
-} = require('../../agent/keystore.js');
+
+// ---- key file storage (folded from src/agent/keystore.js) ----
+export function keyFile() {
+  return path.join(configDir(), 'agent-key.json');
+}
+
+/**
+ * Store API key outside the vault and outside the repo.
+ * Uses Electron safeStorage when available; otherwise plaintext file in app config dir
+ * (still never inside the vault).
+ */
+export function saveApiKey(rawKey, safeStorage) {
+  const key = String(rawKey || '').trim();
+  if (!key) return { ok: false, error: 'API key 为空' };
+  const payload = { updatedAt: new Date().toISOString() };
+  if (safeStorage && safeStorage.isEncryptionAvailable && safeStorage.isEncryptionAvailable()) {
+    payload.enc = safeStorage.encryptString(key).toString('base64');
+    payload.mode = 'safeStorage';
+  } else {
+    payload.key = key;
+    payload.mode = 'localFile';
+  }
+  fs.writeFileSync(keyFile(), JSON.stringify(payload, null, 2), { mode: 0o600 });
+  return { ok: true, mode: payload.mode };
+}
+
+export function loadApiKey(safeStorage) {
+  const f = keyFile();
+  if (!fs.existsSync(f)) return { ok: true, key: null };
+  try {
+    const payload = JSON.parse(fs.readFileSync(f, 'utf8'));
+    if (payload.mode === 'safeStorage' && payload.enc && safeStorage) {
+      const buf = Buffer.from(payload.enc, 'base64');
+      return { ok: true, key: safeStorage.decryptString(buf), mode: 'safeStorage' };
+    }
+    if (payload.key) return { ok: true, key: payload.key, mode: 'localFile' };
+    return { ok: true, key: null };
+  } catch (err) {
+    return { ok: false, error: err.message, key: null };
+  }
+}
+
+export function clearApiKey() {
+  const f = keyFile();
+  if (fs.existsSync(f)) fs.unlinkSync(f);
+  return { ok: true };
+}
+
+export function hasApiKey(safeStorage) {
+  const r = loadApiKey(safeStorage);
+  return !!(r.ok && r.key);
+}
 
 export const name = 'kvd-keychain';
 
