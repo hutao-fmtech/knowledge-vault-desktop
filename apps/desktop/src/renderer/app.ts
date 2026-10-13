@@ -326,6 +326,7 @@ const adv = {
   approvalQueue: $('approval-queue'),
   approvalCmdWrap: $('approval-command-wrap'),
   approvalCmd: $('approval-command'),
+  approvalCmdLabel: $('approval-command-label'),
   approvalArgs: $('approval-args'),
   input: $<HTMLInputElement>('input-advanced'),
 };
@@ -335,7 +336,7 @@ let advState: UiAdvancedState = { enabled: false, policy: 'approve' };
 const POLICY_LABEL: Record<string, string> = { approve: '逐次审批', 'log-only': '直接执行（仅记录）' };
 
 const RISK_TEXT: Record<'enable' | 'log-only', string> = {
-  enable: `<p>开启高级档后，Agent 可以在 dsh 沙箱 profile 中调用内置工具（如 bash 命令、读取文件）。</p>
+  enable: `<p>开启高级档后，Agent 可以在 dsh 沙箱 profile 中调用内置工具（如 shell 命令：macOS/Linux 为 bash，Windows 为 PowerShell；读取文件）。</p>
 <ul><li>工具在只读沙箱中运行，工作目录为当前 vault；修改笔记仍只能生成拟改动，需你 Apply。</li>
 <li>命令可以读取 vault 内容，并可能读取本机其它可读文件；读取结果会发送给模型服务。</li>
 <li>每次调用都会记录到本机日志（vault 之外，不含 API key）。</li>
@@ -429,6 +430,7 @@ function showNextApproval() {
   adv.approvalQueue.textContent = approvalQueue.length > 1 ? `（另有 ${approvalQueue.length - 1} 个待审批）` : '';
   adv.approvalCmdWrap.classList.toggle('hidden', req.command == null);
   adv.approvalCmd.textContent = req.command == null ? '' : req.command;
+  adv.approvalCmdLabel.textContent = req.commandLanguage ? `${req.commandLanguage} 命令` : '命令';
   adv.approvalArgs.textContent = JSON.stringify(req.arguments, null, 2);
   adv.approval.classList.remove('hidden');
 }

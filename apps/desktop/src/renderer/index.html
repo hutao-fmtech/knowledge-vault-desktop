@@ -140,7 +140,7 @@
           <input type="checkbox" id="toggle-advanced" />
           <span>
             <strong>启用高级档（dsh 工具）</strong>
-            <small class="hint">默认关闭。开启后 Agent 可在 dsh 沙箱 profile 中调用 bash / 文件读取等工具；网络与插件工具保持禁用。只能在本机手动开启，远程指令无法开启。关闭立即生效，无需重启。</small>
+            <small class="hint">默认关闭。开启后 Agent 可在 dsh 沙箱 profile 中调用 shell（macOS/Linux 为 bash，Windows 为 PowerShell）/ 文件读取等工具；网络与插件工具保持禁用。只能在本机手动开启，远程指令无法开启。关闭立即生效，无需重启。</small>
           </span>
         </label>
         <fieldset id="policy-fieldset" class="policy" disabled>
@@ -177,7 +177,7 @@
       <p class="muted">Agent 请求执行以下工具调用。以下是将要执行的<strong>完整命令与全部参数</strong>（在执行前由 Knowledge Vault 拦截）。</p>
       <p class="approval-tool">工具：<code id="approval-tool">—</code> <span id="approval-nested" class="badge hidden">嵌套调用</span> <span id="approval-queue" class="muted small"></span></p>
       <div id="approval-command-wrap">
-        <h3>命令</h3>
+        <h3 id="approval-command-label">命令</h3>
         <pre id="approval-command" class="approval-pre"></pre>
       </div>
       <h3>全部参数（JSON）</h3>

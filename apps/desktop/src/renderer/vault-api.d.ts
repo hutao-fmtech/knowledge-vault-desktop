@@ -30,6 +30,7 @@ interface UiApprovalRequest {
   tool: string;
   nested?: boolean;
   command?: string | null;
+  commandLanguage?: 'PowerShell' | 'bash' | null;
   arguments?: unknown;
 }
 

@@ -22,7 +22,18 @@ export interface ApprovalUiRequest {
   tool: string;
   arguments: unknown;
   command: string | null;
+  /** Shell language of `command` for the dialog label: PowerShell (pwsh tool) or bash. */
+  commandLanguage: CommandLanguage;
   nested: boolean;
+}
+
+export type CommandLanguage = 'PowerShell' | 'bash' | null;
+
+/** Dialog label for a shell tool's command: pwsh → PowerShell, bash → bash. */
+export function commandLanguageOf(tool: string): CommandLanguage {
+  if (tool === 'pwsh') return 'PowerShell';
+  if (tool === 'bash') return 'bash';
+  return null;
 }
 
 export interface ApprovalBridgeConfig {
@@ -273,6 +284,7 @@ export function apply(ctx: Context, config: ApprovalBridgeConfig = {}): void {
               tool,
               arguments: args,
               command,
+              commandLanguage: commandLanguageOf(tool),
               nested: !!stored.nested,
             }),
           )

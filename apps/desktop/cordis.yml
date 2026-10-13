@@ -9,6 +9,10 @@
 #             (enforced by scripts/check-boundaries.mjs)
 #   config:   plugin config (plain YAML; no !!js tags)
 #   disabled: skip the row
+#   platforms: optional list of process.platform values (win32, darwin, linux);
+#             the row mounts only there. Used for the advanced shell: bash on
+#             macOS/Linux, PowerShell on Windows (issue #18: MSYS2 bash cannot
+#             start under the dsh Windows restricted token).
 #   lazy + children: a group that is NOT mounted at boot. `advanced` is mounted
 #             as a disposable child fiber only while Settings > Advanced is on;
 #             workspaceRoot / bridge callbacks are filled in at mount time.
@@ -57,6 +61,7 @@
           the user reviews and presses Apply.
           Never touch .obsidian/ or 00-系统/. Never overwrite existing notes.
           Never set sandbox_permissions or ask for sandbox escalation: it is always rejected.
+          {{shellTool}}
     - id: dsh-tools
       name: '@deepseek-ai/dsh-tools'
     - id: dsh-user-approval
@@ -85,12 +90,20 @@
         mode: read-only
     - id: dsh-bash-sandbox
       name: '@deepseek-ai/dsh-bash-sandbox'
+      platforms: [darwin, linux]
+    - id: dsh-pwsh-sandbox
+      name: '@deepseek-ai/dsh-pwsh-sandbox'
+      platforms: [win32]
     - id: dsh-shell-env
       name: '@deepseek-ai/dsh-shell-env'
     - id: dsh-jobs-local
       name: '@deepseek-ai/dsh-jobs-local'
     - id: dsh-tool-bash
       name: '@deepseek-ai/dsh-tool-bash'
+      platforms: [darwin, linux]
+    - id: dsh-tool-pwsh
+      name: '@deepseek-ai/dsh-tool-pwsh'
+      platforms: [win32]
     - id: kvd-approval-bridge
       name: '@kvd/advanced/approval-bridge'
     - id: kvd-audit-log

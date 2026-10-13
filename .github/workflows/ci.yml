@@ -67,7 +67,54 @@ jobs:
           A=$(grep -oP 'AGENT_SMOKE_OK \K[0-9]+(?= asserts)' smoke.txt)
           B=$(grep -oP 'ADVANCED_SMOKE_OK \K[0-9]+(?= checks)' smoke.txt)
           echo "AGENT_SMOKE_OK=$A ADVANCED_SMOKE_OK=$B"
-          [ "$A" -ge 264 ] && [ "$B" -ge 117 ]
+          [ "$A" -ge 284 ] && [ "$B" -ge 119 ]
+
+  smoke-windows:
+    # Issue #18: the advanced bash sandbox must really execute on Windows
+    # (Git Bash under the restricted-token runner), not resolve the WSL launcher.
+    name: smoke (windows, real dsh sandbox)
+    runs-on: windows-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      KVD_REQUIRE_DSH_E2E: "1"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm run smoke 2>&1 | tee smoke.txt
+      - name: advanced checks ran for real via pwsh (approval, read-only, escalation, disable)
+        run: |
+          set -euo pipefail
+          for c in \
+            'advanced shell tool on win32: pwsh' \
+            '✓ cordis.yml mounts exactly the pwsh shell tool on win32' \
+            '✓ system prompt names the PowerShell shell tool' \
+            '✓ real call intercepted BEFORE execution with full command + all arguments (AC-13)' \
+            '✓ approval dialog labels the command as PowerShell' \
+            '✓ Deny prevents execution (file not created)' \
+            '✓ approved command still cannot write: sandbox is read-only' \
+            '✓ read-only check is not vacuous: confined pwsh actually ran (read + listing output present)' \
+            '✓ sandbox pwsh is a working shell' \
+            '✓ AC3: approved call executed; its result is in the run summary' \
+            '✓ AC1 [approve]: escalation requests never show an approval modal' \
+            '✓ AC1 [log-only]: escalation rejected, nothing written' \
+            '✓ disable stops/unmounts the advanced fiber immediately (AC-12)' \
+            '✓ after disable, advanced runs are refused (default behaviour restored)' \
+            '(sandbox output:'; do
+            grep -F -- "$c" smoke.txt || { echo "MISSING: $c"; exit 1; }
+          done
+          A=$(grep -oP 'AGENT_SMOKE_OK \K[0-9]+(?= asserts)' smoke.txt)
+          B=$(grep -oP 'ADVANCED_SMOKE_OK \K[0-9]+(?= checks)' smoke.txt)
+          echo "AGENT_SMOKE_OK=$A ADVANCED_SMOKE_OK=$B"
+          [ "$A" -ge 284 ] && [ "$B" -ge 119 ]
 
   pack-smoke:
     name: pack-smoke (asar + Electron Node + cordis.yml composition)

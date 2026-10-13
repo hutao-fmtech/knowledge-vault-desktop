@@ -28,8 +28,12 @@ test('persona prefix and key env survive the YAML move unchanged', () => {
       + "Answer in the user's language. Cite vault-relative note paths. "
       + 'The filesystem is read-only to you. To change the vault, call vault_propose_change; the user reviews and presses Apply. '
       + 'Never touch .obsidian/ or 00-系统/. Never overwrite existing notes. '
-      + 'Never set sandbox_permissions or ask for sandbox escalation: it is always rejected.',
+      + 'Never set sandbox_permissions or ask for sandbox escalation: it is always rejected. '
+      + '{{shellTool}}',
   );
+  // {{shellTool}} is filled per platform at mount time.
+  const mounted = advancedRowsFor({ workspaceRoot: '/v' }).find((r) => r.id === 'dsh-system-prompt')?.config?.personaPrefix;
+  assert.ok(typeof mounted === 'string' && !mounted.includes('{{shellTool}}') && mounted.includes(process.platform === 'win32' ? '`pwsh`' : '`bash`'));
   assert.deepEqual(DEFAULT_ROWS.find((r) => r.id === 'dsh-llm-deepseek-api-key')?.config, { apiKeyEnv: 'DEEPSEEK_API_KEY' });
 });
 

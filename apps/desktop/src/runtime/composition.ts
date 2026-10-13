@@ -3,7 +3,7 @@
  * plugin table, isomorphic with dsh-orb's cordis.yml rows) and resolves rows to
  * Cordis plugins. Nothing about WHICH plugins mount is hardcoded here.
  *
- * Each row: { id, name, config?, disabled?, lazy?, children? }
+ * Each row: { id, name, config?, disabled?, platforms?, lazy?, children? }
  *   name = package (or package subpath export) exporting the plugin.
  * The `advanced` lazy group is mounted as a disposable child fiber (PR-7).
  *
@@ -33,6 +33,8 @@ export interface PluginRow {
   name: string;
   config?: Record<string, unknown>;
   disabled?: boolean;
+  /** process.platform values this row mounts on; absent = every platform. */
+  platforms?: string[];
   lazy?: boolean;
   children?: PluginRow[];
 }
@@ -52,6 +54,9 @@ export function parseComposition(text: string): PluginRow[] {
     if (typeof row.name !== 'string' || !row.name) throw new Error(`cordis.yml: ${row.id}: missing name`);
     if (seen.has(row.id)) throw new Error(`cordis.yml: duplicate id ${row.id}`);
     seen.add(row.id);
+    if (row.platforms !== undefined && (!Array.isArray(row.platforms) || row.platforms.some((p) => typeof p !== 'string'))) {
+      throw new Error(`cordis.yml: ${row.id}: platforms must be a list of strings`);
+    }
     if (row.children !== undefined) {
       if (!Array.isArray(row.children)) throw new Error(`cordis.yml: ${row.id}: children must be a list`);
       row.children.forEach((c, i) => check(c, `${row.id}.children[${i}]`));
@@ -65,7 +70,18 @@ export function loadComposition(file: string = CORDIS_YML): PluginRow[] {
   return parseComposition(fs.readFileSync(file, 'utf8'));
 }
 
-const ALL_ROWS = loadComposition();
+/** True when a row mounts on `platform` (no `platforms` list = everywhere). */
+export function rowAppliesTo(row: PluginRow, platform: string = process.platform): boolean {
+  return !row.platforms || row.platforms.includes(platform);
+}
+
+/** Drop rows (recursively) that do not apply to `platform`. */
+export function rowsForPlatform(rows: PluginRow[], platform: string = process.platform): PluginRow[] {
+  return rows.filter((r) => rowAppliesTo(r, platform)).map((r) =>
+    r.children ? { ...r, children: rowsForPlatform(r.children, platform) } : r);
+}
+
+const ALL_ROWS = rowsForPlatform(loadComposition());
 
 /** Default-mode rows (model-only, mounted at boot). No ctx.tools. */
 export const DEFAULT_ROWS: PluginRow[] = ALL_ROWS.filter((r) => !r.lazy);
@@ -79,6 +95,20 @@ if (!advancedGroup || !advancedGroup.children?.length) {
  * Advanced-mode group (mounted only while Settings > Advanced is on).
  */
 export const ADVANCED_ROWS: PluginRow[] = advancedGroup.children;
+
+/** Model-facing shell tool for this platform's advanced rows: bash, or pwsh on Windows. */
+export function shellToolOf(rows: PluginRow[] = ADVANCED_ROWS): 'bash' | 'pwsh' | null {
+  if (rows.some((r) => r.id === 'dsh-tool-pwsh')) return 'pwsh';
+  if (rows.some((r) => r.id === 'dsh-tool-bash')) return 'bash';
+  return null;
+}
+
+/** Sentence substituted for `{{shellTool}}` in the system prompt. */
+export function shellToolSentence(tool: 'bash' | 'pwsh' | null): string {
+  if (tool === 'pwsh') return 'Your shell tool is `pwsh` (Windows PowerShell, read-only sandbox, ConstrainedLanguage): use cmdlets such as Get-ChildItem and Get-Content -Encoding utf8; there is no bash.';
+  if (tool === 'bash') return 'Your shell tool is `bash` (read-only sandbox): use commands such as ls, cat and grep.';
+  return 'You have no shell tool.';
+}
 
 /** Flat list of every plugin row id declared in cordis.yml (default + advanced). */
 export function compositionPluginIds(): string[] {
@@ -107,6 +137,10 @@ export function advancedRowsFor(opts: AdvancedMountOptions): PluginRow[] {
   return ADVANCED_ROWS.map((row) => {
     if (row.id === 'dsh-sandbox-policy') {
       return { ...row, config: { ...(row.config || {}), mode: 'read-only', workspaceRoot: root } };
+    }
+    if (row.id === 'dsh-system-prompt' && typeof row.config?.personaPrefix === 'string') {
+      const personaPrefix = row.config.personaPrefix.replace('{{shellTool}}', shellToolSentence(shellToolOf()));
+      return { ...row, config: { ...row.config, personaPrefix } };
     }
     if (row.id === 'kvd-approval-bridge') {
       return { ...row, config: { ...(row.config || {}), ...(opts.bridge || {}) } };
