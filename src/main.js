@@ -4,14 +4,33 @@ const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage } = require('ele
 const path = require('path');
 const fs = require('fs');
 const { createVault, sanitizeVaultName, topLevelSkeletonLabels } = require('./vault');
-const { createMockEngine, createDeepSeekEngine, listInboxNotes } = require('./agent/engine');
-// proposals apply/discard/create live in kvd-proposals (ctx.proposals); pure helpers remain in ./agent/proposals.js
-const { saveApiKey, loadApiKey, clearApiKey, hasApiKey, configDir } = require('./agent/keystore');
 const { createAdvancedController } = require('./agent/advanced/controller');
 const { classifyIpcOrigin } = require('./agent/advanced/origin');
 const { createToolLog } = require('./agent/advanced/tool-log');
 const { advancedRunResult } = require('./agent/advanced/run-result');
-const { LIVE_PROVIDER, MOCK_PROVIDER, MOCK_MODEL, DEFAULT_MODEL } = require('./agent/models');
+
+// Plugin-owned ESM modules, loaded from CJS via dynamic import (same interop as
+// runtime/boot.mjs). Default-mode skills/search/proposals go through ctx services;
+// main only needs the key file helpers (kvd-keychain), configDir and model ids.
+/** @type {{ saveApiKey: Function, loadApiKey: Function, clearApiKey: Function, hasApiKey: Function, configDir: () => string, models: Record<string, any> } | null} */
+let kvd = null;
+const kvdReady = Promise.all([
+  import('./runtime/plugins/kvd-keychain.mjs'),
+  import('./runtime/shared/config-dir.mjs'),
+  import('./runtime/shared/models.mjs'),
+]).then(([keychain, cfg, models]) => {
+  kvd = {
+    saveApiKey: keychain.saveApiKey,
+    loadApiKey: keychain.loadApiKey,
+    clearApiKey: keychain.clearApiKey,
+    hasApiKey: keychain.hasApiKey,
+    configDir: cfg.configDir,
+    models,
+  };
+  return kvd;
+});
+const hasApiKey = (ss) => kvd.hasApiKey(ss);
+const loadApiKey = (ss) => kvd.loadApiKey(ss);
 
 const PACK_SMOKE = process.argv.includes('--kvd-pack-smoke');
 
@@ -27,7 +46,9 @@ async function runPackSmoke() {
     return;
   }
   // ESM dynamic import of runtime + smokeMount from inside asar / unpacked tree.
-  const { smokeMount } = require('./agent/dsh-runtime');
+  // Plugin-owned ESM (kvd-keychain, shared/config-dir, shared/models) must load from asar too.
+  await kvdReady;
+  const { smokeMount } = await import('./runtime/boot.mjs');
   const mount = await smokeMount();
   if (!mount.ok || !mount.providers.includes('deepseek-official')) {
     console.error('KVD_PACK_SMOKE_FAIL mount', mount);
@@ -62,7 +83,7 @@ if (PACK_SMOKE) {
 }
 
 const TEMPLATE_ROOT = path.join(__dirname, '..', 'resources', 'template');
-const PREFS_FILE = () => path.join(configDir(), 'prefs.json');
+const PREFS_FILE = () => path.join(kvd.configDir(), 'prefs.json');
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
@@ -130,11 +151,10 @@ function writePrefs(patch) {
 // Default mode ask/sort/card stays model-only; tools exist only while advanced
 // is ON and the advanced fiber is mounted.
 // ---------------------------------------------------------------------------
-const advanced = createAdvancedController({ readPrefs, writePrefs });
-const toolLog = createToolLog({
-  dir: path.join(configDir(), 'logs'),
-  getSecrets: () => [loadApiKey(safeStorage).key],
-});
+/** @type {ReturnType<typeof createAdvancedController>} */
+let advanced = null;
+/** @type {ReturnType<typeof createToolLog>} */
+let toolLog = null;
 /** @type {Map<string, (d: 'allow'|'deny') => void>} */
 const approvalWaiters = new Map();
 /** @type {ReturnType<typeof import('./agent/advanced/host.mjs').createAdvancedHost> | null} */
@@ -198,13 +218,23 @@ async function getAdvancedHost() {
     // Same model the rest of the app uses; offline mock when no key is saved.
     getModelRoute: () =>
       hasApiKey(safeStorage)
-        ? { provider: LIVE_PROVIDER, model: DEFAULT_MODEL }
-        : { provider: MOCK_PROVIDER, model: MOCK_MODEL },
+        ? { provider: kvd.models.LIVE_PROVIDER, model: kvd.models.DEFAULT_MODEL }
+        : { provider: kvd.models.MOCK_PROVIDER, model: kvd.models.MOCK_MODEL },
   });
   return advancedHost;
 }
 
-advanced.onChange((st) => {
+/** Build config-dir-backed shell state once the plugin-owned modules are loaded. */
+const shellReady = kvdReady.then(() => {
+  advanced = createAdvancedController({ readPrefs, writePrefs });
+  toolLog = createToolLog({
+    dir: path.join(kvd.configDir(), 'logs'),
+    getSecrets: () => [loadApiKey(safeStorage).key],
+  });
+  advanced.onChange(onAdvancedChange);
+});
+
+function onAdvancedChange(st) {
   if (!st.enabled) {
     for (const [id, resolve] of approvalWaiters) {
       approvalWaiters.delete(id);
@@ -213,7 +243,7 @@ advanced.onChange((st) => {
   }
   toolLog.append({ event: 'settings', advancedEnabled: st.enabled, policy: st.policy });
   sendToRenderer('advanced-state', advancedStatusSync());
-});
+}
 
 function advancedStatusSync() {
   const st = advanced.getState();
@@ -222,13 +252,6 @@ function advancedStatusSync() {
     runtime: advancedHost ? advancedHost.status() : { running: false, lastError: null, composition: 'kvd-advanced-group' },
     logFile: toolLog.file,
   };
-}
-
-function getEngine() {
-  // Legacy facade for status labeling / tests. Default-mode IPC uses ctx.kvdSkills.
-  const key = loadApiKey(safeStorage).key;
-  if (!key) return createMockEngine();
-  return createDeepSeekEngine(() => loadApiKey(safeStorage).key);
 }
 
 /**
@@ -269,6 +292,7 @@ function createWindow() {
 
 if (!PACK_SMOKE) {
   app.whenReady().then(async () => {
+    await shellReady;
     await attachIpcBridge();
     createWindow();
     app.on('activate', () => {
@@ -366,12 +390,20 @@ ipcMain.handle('agent-accept-privacy', async () => {
   return { ok: true };
 });
 
-ipcMain.handle('agent-save-key', (_e, key) => saveApiKey(key, safeStorage));
-ipcMain.handle('agent-clear-key', () => clearApiKey());
+ipcMain.handle('agent-save-key', async (_e, key) => (await kvdReady).saveApiKey(key, safeStorage));
+ipcMain.handle('agent-clear-key', async () => (await kvdReady).clearApiKey());
 
-ipcMain.handle('agent-list-inbox', () => {
+ipcMain.handle('agent-list-inbox', async () => {
   if (!activeVault) return { ok: false, error: '未打开 vault' };
-  return { ok: true, notes: listInboxNotes(activeVault) };
+  try {
+    const ctx = await getRuntimeCtx();
+    await syncVaultService(activeVault);
+    const vaultSearch = ctx.get('vaultSearch');
+    if (!vaultSearch) return { ok: false, error: 'vaultSearch service missing' };
+    return vaultSearch.listInbox();
+  } catch (err) {
+    return { ok: false, error: err.message || String(err) };
+  }
 });
 
 async function stashProposals(result) {

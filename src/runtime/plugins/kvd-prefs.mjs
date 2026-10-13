@@ -4,12 +4,9 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { createRequire } from 'node:module';
 import { Service } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
-
-const require = createRequire(import.meta.url);
-const { configDir } = require('../../agent/keystore.js');
+import { configDir } from '../shared/config-dir.mjs';
 
 export const name = 'kvd-prefs';
 

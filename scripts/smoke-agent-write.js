@@ -7,20 +7,36 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { createVault } = require('../src/vault');
-const {
-  proposeCreate,
-  proposeMove,
-  applyProposal,
-  discardProposal,
-} = require('../src/agent/proposals');
-const { resolveVaultPath } = require('../src/agent/paths');
-const { createMockEngine } = require('../src/agent/engine');
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 
 (async () => {
+  // Plugin-owned modules (ESM) — formerly src/agent/{proposals,paths,search,engine}.js
+  const {
+    proposeCreate,
+    proposeMove,
+    applyProposal,
+    discardProposal,
+  } = await import('../src/runtime/plugins/kvd-proposals.mjs');
+  const { resolveVaultPath } = await import('../src/runtime/plugins/kvd-vault.mjs');
+  const { createSkillsEngine } = await import('../src/runtime/plugins/kvd-skills.mjs');
+  const { searchVault, SEARCH_EXCLUDED_TOP } = await import('../src/runtime/plugins/kvd-search.mjs');
+  // Offline skills engine over the pure plugin helpers (what the old createMockEngine facade did).
+  const createMockEngine = () =>
+    createSkillsEngine(
+      {
+        style: 'mock',
+        hasKey: false,
+        backend: 'mock',
+        search: searchVault,
+        resolve: resolveVaultPath,
+        proposeMove,
+        proposeCreate,
+      },
+      { id: 'mock', backend: 'mock' },
+    );
   const templateRoot = path.join(__dirname, '..', 'resources', 'template');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kvd-agent-smoke-'));
   const created = createVault({ parentDir: tmp, rawName: 'Agent_Smoke', templateRoot });
@@ -111,7 +127,7 @@ function assert(cond, msg) {
 
   
   // dsh-llm in-process mount via composition root (no network)
-  const { smokeMount } = require('../src/agent/dsh-runtime');
+  const { smokeMount } = await import('../src/runtime/boot.mjs');
   const mount = await smokeMount();
   assert(mount.ok && mount.providers.includes('deepseek-official'), 'dsh-llm mount');
   assert(mount.hasCredentials, 'kvd-keychain provides credentials');
@@ -126,8 +142,10 @@ function assert(cond, msg) {
   delete process.env.DEEPSEEK_API_KEY;
   assert(process.env.DEEPSEEK_API_KEY === undefined, 'env key must start undefined');
 
-  const runtimeSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'agent', 'dsh-runtime.js'), 'utf8');
-  assert(!/process\.env\.DEEPSEEK_API_KEY\s*=/.test(runtimeSrc), 'dsh-runtime must not assign DEEPSEEK_API_KEY');
+  const runtimeSrc = ['boot.mjs', 'plugins/kvd-skills.mjs', 'plugins/kvd-keychain.mjs']
+    .map((f) => fs.readFileSync(path.join(__dirname, '..', 'src', 'runtime', f), 'utf8'))
+    .join('\n');
+  assert(!/process\.env\.DEEPSEEK_API_KEY\s*=/.test(runtimeSrc), 'runtime (boot/kvd-skills/kvd-keychain) must not assign DEEPSEEK_API_KEY');
 
   const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'utf8');
   assert(/agent-sort[\s\S]*needPrivacy/.test(mainSrc), 'G1: agent-sort must check privacy');
@@ -137,8 +155,6 @@ function assert(cond, msg) {
   const { credentialRef } = await import('@deepseek-ai/dsh-credentials');
   const llmMod = await import('@deepseek-ai/dsh-llm');
   const { BlockAssembler, createSystemMessage, createUserMessage } = llmMod;
-  const { streamText } = require('../src/agent/dsh-runtime');
-  const { createDeepSeekEngine } = require('../src/agent/engine');
 
   const rt = await getRuntime();
   assert(rt && rt.ctx, 'runtime ctx');
@@ -249,7 +265,6 @@ function assert(cond, msg) {
   assert(leakAtt.ok && leakAtt.hits.length === 0, '90-附件 content not searchable');
 
   // Pure search.js path also excludes those dirs
-  const { searchVault, SEARCH_EXCLUDED_TOP } = require('../src/agent/search');
   assert(
     SEARCH_EXCLUDED_TOP.includes('00-系统') && SEARCH_EXCLUDED_TOP.includes('90-附件'),
     'SEARCH_EXCLUDED_TOP'
@@ -402,7 +417,8 @@ function assert(cond, msg) {
   }
 
   // Without consent: ask + sort via DeepSeek engine (hits llm/stream) are blocked
-  const liveEngine = createDeepSeekEngine(() => 'smoke-offline-key');
+  // Live path = kvd-skills with a key in credentials (deepseek-official route).
+  const liveEngine = kvdSkills;
   const askBlocked = await liveEngine.ask({ vaultRoot: vault, question: 'anything' });
   assert(!askBlocked.ok, 'ask blocked without privacy');
   assert(
@@ -419,8 +435,9 @@ function assert(cond, msg) {
     'sort privacy error'
   );
   // Stronger: streamText itself is blocked
-  const stBlocked = await streamText({
-    apiKey: 'smoke-offline-key',
+  // (kvd-skills.streamText: live deepseek-official route, key from credentials)
+  const stBlocked = await kvdSkills.streamText({
+    provider: 'deepseek-official',
     system: 's',
     user: 'u',
   });
@@ -467,7 +484,7 @@ function assert(cond, msg) {
   assert(mockSort.ok && mockSort.proposals.length === 1 && mockSort.viaSkills, 'mock sort after consent');
 
   // Live engine facade also marks viaSkills (privacy already accepted; stream uses mock-offline only in collectStream)
-  assert(liveEngine.viaSkills === true, 'createDeepSeekEngine is skills facade');
+  assert(askBlocked.viaSkills === true && sortBlocked.viaSkills === true, 'live path is kvd-skills (viaSkills)');
 
   await credentials.unset(ref);
   kvdPrefs.clearPrivacyForTests();

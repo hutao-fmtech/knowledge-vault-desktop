@@ -196,3 +196,19 @@ export function registerElectronQuitHooks(app) {
     }
   });
 }
+
+/** Offline check used by smoke / pack-smoke: mount succeeds and lists the official route. */
+export async function smokeMount() {
+  const { ctx } = await bootRuntime();
+  return {
+    ok: true,
+    providers: ctx.llm.listProviders().map((p) => p.id),
+    hasCredentials: ctx.get('credentials') !== undefined,
+    hasVault: ctx.get('vault') !== undefined,
+    hasVaultSearch: ctx.get('vaultSearch') !== undefined,
+    hasProposals: ctx.get('proposals') !== undefined,
+    hasIpc: ctx.get('ipc') !== undefined,
+    hasSkills: ctx.get('kvdSkills') !== undefined,
+    hasMockProvider: ctx.llm.listProviders().some((p) => p.id === 'kvd-mock'),
+  };
+}

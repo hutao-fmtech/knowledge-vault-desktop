@@ -6,7 +6,6 @@
  * (Electron 39 embeds Node 22.22.1).
  */
 import { randomUUID } from 'node:crypto';
-import { createRequire } from 'node:module';
 import { SessionId } from '@deepseek-ai/dsh-session';
 import {
   bootRuntime,
@@ -15,13 +14,12 @@ import {
   unmountAdvanced,
   isAdvancedMounted,
 } from '../../runtime/boot.mjs';
+import * as models from '../../runtime/shared/models.mjs';
 
 /**
  * The app's configured live model (same id the default-mode skills use, and one
  * of the provider's listed models: deepseek-flash / deepseek-v4-pro).
  */
-const require = createRequire(import.meta.url);
-const models = require('../models.js');
 export const DEFAULT_PROVIDER = models.LIVE_PROVIDER;
 export const DEFAULT_MODEL = models.DEFAULT_MODEL;
 
