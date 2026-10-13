@@ -45,6 +45,8 @@ jobs:
       - run: pnpm run smoke
 
   build:
+    # Plain job name: multi-line matrix values in the default name break `gh run view --log`.
+    name: build-${{ matrix.os }}
     needs: smoke
     strategy:
       fail-fast: false
