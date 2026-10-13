@@ -9,53 +9,78 @@ permissions:
   contents: read
 
 jobs:
+  checks:
+    name: boundaries + unit tests
+    runs-on: ubuntu-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: check-boundaries (undeclared deps / cross-package relative imports / cycles fail)
+        run: pnpm run check-boundaries
+      - name: check-boundaries self-test
+        run: node --test scripts/test/*.test.mjs
+      - name: unit tests (every workspace package)
+        run: pnpm -r test
+
   smoke:
     name: smoke
     runs-on: ubuntu-latest
     env:
       # Pure Node smoke; skip Electron binary download for this job.
       ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      # Node 22 runner: the advanced Part B/C e2e must not be skipped.
+      KVD_REQUIRE_DSH_E2E: "1"
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run smoke
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run smoke | tee smoke.txt
+      - name: RS-7 smoke counts only increase
+        run: |
+          set -euo pipefail
+          A=$(grep -oP 'AGENT_SMOKE_OK \K[0-9]+(?= asserts)' smoke.txt)
+          B=$(grep -oP 'ADVANCED_SMOKE_OK \K[0-9]+(?= checks)' smoke.txt)
+          echo "AGENT_SMOKE_OK=$A ADVANCED_SMOKE_OK=$B"
+          [ "$A" -ge 114 ] && [ "$B" -ge 109 ]
 
   pack-smoke:
-    name: pack-smoke (asar + Electron Node)
+    name: pack-smoke (asar + Electron Node + cordis.yml composition)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
       - run: sudo apt-get update && sudo apt-get install -y xvfb
-      - run: npm ci
-      - name: electron-builder --dir
-        run: npx electron-builder --dir --linux
-      - name: launch packaged app (xvfb) — Node >=22.12 + ESM smokeMount in asar
+      - run: pnpm install --frozen-lockfile
+      - name: electron-builder --dir (staged via pnpm deploy)
+        run: node scripts/build-desktop.mjs --dir --linux
+      - name: launch packaged app (xvfb) and assert every cordis.yml plugin mounted
         run: |
           set -euo pipefail
-          APP_DIR="dist/linux-unpacked"
+          APP_DIR="apps/desktop/dist/linux-unpacked"
           if [ ! -d "$APP_DIR" ]; then
             echo "missing $APP_DIR" >&2
-            ls -la dist || true
+            ls -la apps/desktop/dist || true
             exit 1
           fi
-          # Prefer the Electron app binary; ignore chrome_crashpad_handler / helpers.
           if [ -x "$APP_DIR/knowledge-vault-desktop" ]; then
             BIN="$APP_DIR/knowledge-vault-desktop"
           else
             BIN="$(find "$APP_DIR" -maxdepth 1 -type f -executable ! -name '*.so' ! -name 'chrome_crashpad_handler' ! -name 'chrome-sandbox' | head -1)"
-          fi
-          if [ -z "$BIN" ]; then
-            echo "no executable in $APP_DIR" >&2
-            ls -la "$APP_DIR" >&2
-            exit 1
           fi
           echo "launching $BIN"
           OUT="$(mktemp)"
@@ -68,14 +93,4 @@ jobs:
             echo "packaged app exited $CODE" >&2
             exit "$CODE"
           fi
-          grep -q 'KVD_PACK_SMOKE_OK' "$OUT"
-          NODE_LINE="$(grep 'KVD_NODE_VERSION' "$OUT" | tail -1)"
-          NODE_VER="$(echo "$NODE_LINE" | awk '{print $2}')"
-          echo "packaged process.versions.node=$NODE_VER"
-          node -e "
-            const v=process.argv[1].split('.').map(Number);
-            const ok=v[0]>22||(v[0]===22&&v[1]>=12)||v[0]>=24;
-            if(!ok){console.error('node too old', process.argv[1]); process.exit(1)}
-            console.log('node check ok', process.argv[1]);
-          " "$NODE_VER"
-          grep -q 'KVD_SMOKE_MOUNT' "$OUT"
+          node scripts/assert-pack-smoke.mjs "$OUT"

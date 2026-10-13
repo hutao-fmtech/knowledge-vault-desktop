@@ -10,21 +10,33 @@ M1 scope (see `/workspace/vault-desktop-m0-decisions.md` §5):
 
 ## Develop
 
+pnpm workspace (Node >= 22.12, pnpm 9; `node-linker=hoisted`, see `.npmrc`).
+
 ```bash
-npm install
-npm run smoke    # headless createVault check
-npm start        # Electron UI (needs a display)
+pnpm install
+pnpm run check-boundaries   # per-package dependency/import boundaries
+pnpm -r test                # node:test unit tests in every package
+pnpm run smoke              # createVault + AC-7 + advanced AC-11..14 (headless)
+pnpm start                  # Electron UI (needs a display)
 ```
 
 ## Layout
 
-- `src/main.js` / `preload.js` / `renderer/` — Electron thin shell
-- `src/sanitize.js` / `vault.js` — name rules + materialize pipeline
-- `resources/template/` — vendored vault skeleton (offline)
+```
+apps/desktop/     Electron shell (main / preload / renderer), cordis.yml (plugin composition),
+                  runtime/boot.mjs (Cordis composition root), electron-builder config
+packages/         one package per capability (@kvd/*): vault, search, proposals, skills,
+                  skills-core, llm-mock, keychain, privacy, prefs, ipc-bridge, advanced,
+                  shared, template (the bundled Obsidian vault template)
+docs/             architecture/ · decisions/ (ADRs) · requirements/ · verification/
+scripts/          smokes, check-boundaries, build-desktop (pnpm deploy + electron-builder), pack-smoke assert
+```
+
+See `docs/architecture/monorepo.md` and `docs/decisions/0003-pnpm-monorepo-layout.md`.
 
 ## License
 
-MIT (application). Bundled template license: see `resources/template/LICENSE`.
+MIT (application). Bundled template license: see `packages/template/template/LICENSE`.
 
 
 ## Agent sidebar (v0.2 default mode)
@@ -38,13 +50,13 @@ Every write is a **proposed change**; disk updates only after **Apply**. Paths o
 - Advanced mode: see below (plugin fiber on the composition root; reference source for dsh APIs: `deepseek-ai/deepseek-harness`).
 
 ```bash
-npm run smoke          # createVault + AC-7 + advanced AC-11..14
-npm run smoke:agent    # AC-7 only
-npm run smoke:advanced # AC-11..14 only
-npm start
+pnpm run smoke          # createVault + AC-7 + advanced AC-11..14
+pnpm run smoke:agent    # AC-7 only
+pnpm run smoke:advanced # AC-11..14 only
+pnpm start
 ```
 
-Screenshots: `docs/screenshots/`.
+Screenshots: `docs/verification/screenshots/`.
 
 ## Packaging
 
@@ -53,13 +65,13 @@ M1 ships **unsigned** internal-test installers for **Windows + macOS** via GitHu
 - Push a tag `vX.Y.Z` → smoke → build on `windows-latest` (NSIS + portable) and `macos-latest` (dmg/zip, arm64 + x64) → assets uploaded to a GitHub pre-release.
 - Or run the workflow manually (Actions → Release) to just produce downloadable artifacts.
 
-Local builds: `npm run dist:win` (Windows host, or Linux + wine), `npm run dist:mac` (macOS host). `dist/` is git-ignored.
+Local builds: `node scripts/build-desktop.mjs --win` (Windows host, or Linux + wine), `--mac` (macOS host), `--dir --linux` (unpacked, used by CI pack-smoke). The script stages `apps/desktop` with `pnpm deploy --prod` and runs electron-builder there; output in `apps/desktop/dist/` (git-ignored). Installer names and the in-app version come from `apps/desktop/package.json`.
 
 macOS first launch of an unsigned build: right-click the app → **Open**.
 
 ## Advanced mode (AC-11..14, plugin architecture)
 
-Off by default. **Settings > Advanced** (local UI only) mounts `ADVANCED_ROWS` as a disposable Cordis fiber on the composition root:
+Off by default. **Settings > Advanced** (local UI only) mounts the lazy `advanced` group of `apps/desktop/cordis.yml` as a disposable Cordis fiber on the composition root:
 
 - `kvd-approval-bridge`: `tools/pre-execute` (prepend) stores full `exec.arguments` by `callId` and returns `ask`; `approval/request` shows full tool name + all arguments (Approve / Deny → `allowed-once` / `rejected`).
 - Policy: approve-each-call (default) or run-directly-log-only (one-time risk prompt). Remote can never enable or change policy; any origin may disable.
@@ -67,4 +79,4 @@ Off by default. **Settings > Advanced** (local UI only) mounts `ADVANCED_ROWS` a
 - Read-only sandbox; note changes only via `vault_propose_change` → Apply.
 - Electron 39.8.10 embeds Node 22.22.1 — no bring-your-own Node. No unsupported SDK profiles, no `@deepseek-ai/dsh` umbrella, no `embedded-agent-kit`.
 
-Screenshots: `docs/screenshots/05`–`14`.
+Screenshots: `docs/verification/screenshots/05`–`14`.

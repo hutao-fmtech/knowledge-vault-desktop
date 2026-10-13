@@ -1,0 +1,99 @@
+# Knowledge Vault Desktop — the complete, static plugin composition.
+# apps/desktop/src/runtime/composition.mjs loads THIS file (also inside the
+# packaged asar); there is no hardcoded row table in code any more.
+#
+# Row shape (isomorphic with dsh-orb apps/orb/cordis.yml):
+#   id:       unique row id
+#   name:     the package (or package subpath export) exporting the Cordis plugin;
+#             every name here must be a dependency of apps/desktop/package.json
+#             (enforced by scripts/check-boundaries.mjs)
+#   config:   plugin config (plain YAML; no !!js tags)
+#   disabled: skip the row
+#   lazy + children: a group that is NOT mounted at boot. `advanced` is mounted
+#             as a disposable child fiber only while Settings > Advanced is on;
+#             workspaceRoot / bridge callbacks are filled in at mount time.
+#
+# Never the dsh umbrella package, never an SDK profile. See
+# docs/decisions/0001-cordis-composition-not-dsh-profile.md.
+
+# ---- default mode (model-only; no ctx.tools) ----
+- id: kvd-prefs
+  name: '@kvd/prefs'
+- id: kvd-ipc-bridge
+  name: '@kvd/ipc-bridge'
+- id: kvd-keychain
+  name: '@kvd/keychain'
+- id: kvd-vault
+  name: '@kvd/vault'
+- id: kvd-search
+  name: '@kvd/search'
+- id: kvd-proposals
+  name: '@kvd/proposals'
+- id: dsh-llm
+  name: '@deepseek-ai/dsh-llm'
+- id: kvd-privacy
+  name: '@kvd/privacy'
+- id: dsh-llm-deepseek-api-key
+  name: '@deepseek-ai/dsh-llm-deepseek-api-key'
+  config:
+    apiKeyEnv: DEEPSEEK_API_KEY
+- id: kvd-llm-mock
+  name: '@kvd/llm-mock'
+- id: kvd-skills
+  name: '@kvd/skills'
+
+# ---- advanced mode (lazy child fiber) ----
+- id: advanced
+  name: kvd-advanced-group
+  lazy: true
+  children:
+    - id: dsh-system-prompt
+      name: '@deepseek-ai/dsh-system-prompt'
+      config:
+        personaPrefix: >-
+          You are the Knowledge Vault assistant working inside the user's Obsidian vault.
+          Answer in the user's language. Cite vault-relative note paths.
+          The filesystem is read-only to you. To change the vault, call vault_propose_change;
+          the user reviews and presses Apply.
+          Never touch .obsidian/ or 00-系统/. Never overwrite existing notes.
+          Never set sandbox_permissions or ask for sandbox escalation: it is always rejected.
+    - id: dsh-tools
+      name: '@deepseek-ai/dsh-tools'
+    - id: dsh-user-approval
+      name: '@deepseek-ai/dsh-user-approval'
+      config:
+        policy: ask
+    - id: dsh-session
+      name: '@deepseek-ai/dsh-session'
+    - id: dsh-session-projection
+      name: '@deepseek-ai/dsh-session-projection'
+    - id: dsh-agent
+      name: '@deepseek-ai/dsh-agent'
+    - id: dsh-agent-loop
+      name: '@deepseek-ai/dsh-agent-loop'
+      config:
+        agents: []
+    - id: dsh-subprocess-local
+      name: '@deepseek-ai/dsh-subprocess-local'
+    - id: dsh-sandbox-local
+      name: '@deepseek-ai/dsh-sandbox-local'
+    - id: dsh-sandbox-policy
+      name: '@deepseek-ai/dsh-sandbox-policy'
+      config:
+        # Always read-only; composition.mjs re-pins this at mount time and
+        # fills workspaceRoot with the open vault.
+        mode: read-only
+    - id: dsh-bash-sandbox
+      name: '@deepseek-ai/dsh-bash-sandbox'
+    - id: dsh-shell-env
+      name: '@deepseek-ai/dsh-shell-env'
+    - id: dsh-jobs-local
+      name: '@deepseek-ai/dsh-jobs-local'
+    - id: dsh-tool-bash
+      name: '@deepseek-ai/dsh-tool-bash'
+    - id: kvd-approval-bridge
+      name: '@kvd/advanced/approval-bridge'
+    - id: kvd-audit-log
+      name: '@kvd/advanced/audit-log'
+    - id: kvd-vault-tools
+      name: '@kvd/advanced/vault-tools'

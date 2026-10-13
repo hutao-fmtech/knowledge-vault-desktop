@@ -1,0 +1,17 @@
+{
+  "name": "@kvd/shared",
+  "version": "0.2.2",
+  "private": true,
+  "description": "Shared constants: model routes and the app config directory (outside any vault).",
+  "license": "MIT",
+  "exports": {
+    "./models": "./src/models.mjs",
+    "./config-dir": "./src/config-dir.mjs"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test"
+  }
+}

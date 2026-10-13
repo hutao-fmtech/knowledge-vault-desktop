@@ -1,0 +1,16 @@
+{
+  "name": "@kvd/skills-core",
+  "version": "0.2.2",
+  "private": true,
+  "description": "Pure helpers shared by @kvd/skills and @kvd/llm-mock (breaks the former import cycle).",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@kvd/search",
+  "version": "0.2.2",
+  "private": true,
+  "description": "kvd-search: vaultSearch service (full-text search with code-point-safe snippets).",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/schemastery": "3.18.4",
+    "@kvd/vault": "workspace:*"
+  }
+}
