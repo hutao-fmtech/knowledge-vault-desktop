@@ -6,9 +6,12 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { createVault } = require('../src/vault');
+const { createVault } = require('../packages/vault/src/create.js');
+const repo = require('./lib/repo');
 
+let asserts = 0;
 function assert(cond, msg) {
+  asserts += 1;
   if (!cond) throw new Error(msg);
 }
 
@@ -19,10 +22,10 @@ function assert(cond, msg) {
     proposeMove,
     applyProposal,
     discardProposal,
-  } = await import('../src/runtime/plugins/kvd-proposals.mjs');
-  const { resolveVaultPath } = await import('../src/runtime/plugins/kvd-vault.mjs');
-  const { createSkillsEngine } = await import('../src/runtime/plugins/kvd-skills.mjs');
-  const { searchVault, SEARCH_EXCLUDED_TOP } = await import('../src/runtime/plugins/kvd-search.mjs');
+  } = await import('../packages/proposals/src/index.mjs');
+  const { resolveVaultPath } = await import('../packages/vault/src/index.mjs');
+  const { createSkillsEngine } = await import('../packages/skills/src/index.mjs');
+  const { searchVault, SEARCH_EXCLUDED_TOP } = await import('../packages/search/src/index.mjs');
   // Offline skills engine over the pure plugin helpers (what the old createMockEngine facade did).
   const createMockEngine = () =>
     createSkillsEngine(
@@ -37,7 +40,7 @@ function assert(cond, msg) {
       },
       { id: 'mock', backend: 'mock' },
     );
-  const templateRoot = path.join(__dirname, '..', 'resources', 'template');
+  const templateRoot = require('../packages/template/src/index.js').templateRoot;
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kvd-agent-smoke-'));
   const created = createVault({ parentDir: tmp, rawName: 'Agent_Smoke', templateRoot });
   assert(created.ok, created.error || 'createVault failed');
@@ -127,7 +130,7 @@ function assert(cond, msg) {
 
   
   // dsh-llm in-process mount via composition root (no network)
-  const { smokeMount } = await import('../src/runtime/boot.mjs');
+  const { smokeMount } = await import('../apps/desktop/src/runtime/boot.mjs');
   const mount = await smokeMount();
   assert(mount.ok && mount.providers.includes('deepseek-official'), 'dsh-llm mount');
   assert(mount.hasCredentials, 'kvd-keychain provides credentials');
@@ -142,16 +145,16 @@ function assert(cond, msg) {
   delete process.env.DEEPSEEK_API_KEY;
   assert(process.env.DEEPSEEK_API_KEY === undefined, 'env key must start undefined');
 
-  const runtimeSrc = ['boot.mjs', 'plugins/kvd-skills.mjs', 'plugins/kvd-keychain.mjs']
-    .map((f) => fs.readFileSync(path.join(__dirname, '..', 'src', 'runtime', f), 'utf8'))
+  const runtimeSrc = ['apps/desktop/src/runtime/boot.mjs', 'packages/skills/src/index.mjs', 'packages/keychain/src/index.mjs']
+    .map((f) => fs.readFileSync(path.join(repo.ROOT, f), 'utf8'))
     .join('\n');
   assert(!/process\.env\.DEEPSEEK_API_KEY\s*=/.test(runtimeSrc), 'runtime (boot/kvd-skills/kvd-keychain) must not assign DEEPSEEK_API_KEY');
 
-  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'utf8');
+  const mainSrc = fs.readFileSync(path.join(repo.APP, 'src', 'main.js'), 'utf8');
   assert(/agent-sort[\s\S]*needPrivacy/.test(mainSrc), 'G1: agent-sort must check privacy');
   assert(/agent-card[\s\S]*needPrivacy/.test(mainSrc), 'G1: agent-card must check privacy');
 
-  const { getRuntime, disposeRuntime, wasDisposeCalled } = await import('../src/runtime/boot.mjs');
+  const { getRuntime, disposeRuntime, wasDisposeCalled } = await import('../apps/desktop/src/runtime/boot.mjs');
   const { credentialRef } = await import('@deepseek-ai/dsh-credentials');
   const llmMod = await import('@deepseek-ai/dsh-llm');
   const { BlockAssembler, createSystemMessage, createUserMessage } = llmMod;
@@ -494,9 +497,10 @@ function assert(cond, msg) {
   assert(wasDisposeCalled(), 'dispose must be called on quit');
   assert(rt.ctx.get('llm') === undefined, 'llm service removed after dispose');
 
-  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-  // AC-8: no umbrella; each imported/mounted subpackage exact-pinned (no ^/~)
-  assert(!Object.prototype.hasOwnProperty.call(pkg.dependencies, '@deepseek-ai/dsh'), 'dsh umbrella must not be listed');
+  // AC-8 across the monorepo (apps/desktop + packages/*): no umbrella anywhere;
+  // every declaration of a pinned package is exact (no ^/~), never another version.
+  const pkg = repo.readJson(path.join(repo.APP, 'package.json'));
+  assert(repo.declaredVersions('@deepseek-ai/dsh').length === 0, 'dsh umbrella must not be listed (any package)');
   const exactPins = {
     '@deepseek-ai/cordis': '4.0.4',
     '@deepseek-ai/dsh-credentials': '0.2.0-rc.2',
@@ -507,12 +511,37 @@ function assert(cond, msg) {
   for (const [name, ver] of Object.entries(exactPins)) {
     assert(pkg.dependencies[name] === ver, name + ' exact pin');
     assert(!/[~^]/.test(String(pkg.dependencies[name])), name + ' must not use range');
+    const decls = repo.declaredVersions(name);
+    assert(decls.length >= 1, name + ' declared somewhere');
+    for (const d of decls) {
+      assert(d.spec === ver, `${name} pinned exactly to ${ver} in ${d.where} (got ${d.spec})`);
+    }
+  }
+  // every @deepseek-ai/* declaration in every package is an exact version
+  for (const { dir, pkg: p } of repo.manifests()) {
+    for (const field of ['dependencies', 'peerDependencies', 'devDependencies']) {
+      for (const [n, v] of Object.entries(p[field] || {})) {
+        if (n.startsWith('@deepseek-ai/')) assert(/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(v), `${path.relative(repo.ROOT, dir)} ${n} exact (${v})`);
+        if (n.startsWith('@kvd/')) assert(v === 'workspace:*', `${path.relative(repo.ROOT, dir)} ${n} uses workspace: protocol`);
+      }
+    }
   }
   assert(pkg.devDependencies.electron === '39.8.10', 'electron pin');
-  const lock = fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8');
+  const lock = repo.pnpmLock();
   assert(!/embedded-agent-kit/.test(lock), 'no embedded-agent-kit');
+  assert(!/^\s+'?@deepseek-ai\/dsh'?:/m.test(lock) && !/\/@deepseek-ai\/dsh@|^\s+'?@deepseek-ai\/dsh@/m.test(lock), 'no dsh umbrella in pnpm-lock.yaml');
+  for (const [name, ver] of Object.entries(exactPins)) {
+    assert(lock.includes(`${name}@${ver}`), `pnpm-lock resolves ${name}@${ver}`);
+  }
 
-  console.log('AGENT_SMOKE_OK', vault);
+  // cordis.yml is the composition source (no hardcoded row table)
+  const comp = await import('../apps/desktop/src/runtime/composition.mjs');
+  assert(comp.DEFAULT_ROWS.length === 11 && comp.ADVANCED_ROWS.length === 17, 'cordis.yml declares 11 default + 17 advanced rows');
+  for (const row of [...comp.DEFAULT_ROWS, ...comp.ADVANCED_ROWS]) {
+    assert(Object.prototype.hasOwnProperty.call(pkg.dependencies, row.name.split('/').slice(0, 2).join('/')), `cordis.yml row ${row.id} -> ${row.name} is an apps/desktop dependency`);
+  }
+
+  console.log('AGENT_SMOKE_OK', `${asserts} asserts`, vault);
 })().catch((err) => {
   console.error(err);
   process.exit(1);

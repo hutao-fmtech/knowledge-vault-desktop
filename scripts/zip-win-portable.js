@@ -2,11 +2,11 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const dist = path.join(__dirname, '..', 'dist');
+const dist = path.join(__dirname, '..', 'apps', 'desktop', 'dist');
 const src = path.join(dist, 'win-unpacked');
 const out = path.join(dist, 'Knowledge Vault-0.1.0-win-x64-portable.zip');
 if (!fs.existsSync(src)) {
-  console.error('Missing dist/win-unpacked — run electron-builder --win --dir first');
+  console.error('Missing apps/desktop/dist/win-unpacked — run electron-builder --win --dir first');
   process.exit(1);
 }
 execFileSync('python3', ['-c', `

@@ -1,0 +1,25 @@
+{
+  "name": "@kvd/skills",
+  "version": "0.2.2",
+  "private": true,
+  "description": "kvd-skills: default-mode ask / sortInbox / makeCard flows as a Cordis service.",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-credentials": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-llm": "0.2.0-rc.2",
+    "@deepseek-ai/schemastery": "3.18.4",
+    "@kvd/proposals": "workspace:*",
+    "@kvd/shared": "workspace:*",
+    "@kvd/skills-core": "workspace:*"
+  }
+}

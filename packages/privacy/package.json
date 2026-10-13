@@ -1,0 +1,16 @@
+{
+  "name": "@kvd/privacy",
+  "version": "0.2.2",
+  "private": true,
+  "description": "kvd-privacy: blocks live (non-mock) LLM routes until the user accepts the privacy notice.",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test"
+  }
+}

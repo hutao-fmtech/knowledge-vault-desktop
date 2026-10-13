@@ -22,19 +22,21 @@ jobs:
       - name: Verify tag matches package.json version
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          PKG_VERSION=$(node -p "require('./package.json').version")
+          # The app version (installer names + in-app version) lives in apps/desktop.
+          PKG_VERSION=$(node -p "require('./apps/desktop/package.json').version")
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "::error::Tag version ($TAG_VERSION) does not match package.json ($PKG_VERSION)"
+            echo "::error::Tag version ($TAG_VERSION) does not match apps/desktop/package.json ($PKG_VERSION)"
             exit 1
           fi
-          echo "OK: tag $GITHUB_REF_NAME matches package.json $PKG_VERSION"
+          echo "OK: tag $GITHUB_REF_NAME matches apps/desktop/package.json $PKG_VERSION"
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm run smoke
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run smoke
 
   build:
     needs: smoke
@@ -43,27 +45,28 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            script: dist:win
+            target: --win
             artifacts: |
-              dist/*.exe
+              apps/desktop/dist/*.exe
           - os: macos-latest
-            script: dist:mac
+            target: --mac
             artifacts: |
-              dist/*.dmg
-              dist/*-mac.zip
+              apps/desktop/dist/*.dmg
+              apps/desktop/dist/*-mac.zip
     runs-on: ${{ matrix.os }}
     env:
       # Unsigned internal-test builds (M1); signing/notarization tracked separately.
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm run smoke
-      - run: npm run ${{ matrix.script }} -- --publish never
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run smoke
+      - run: node scripts/build-desktop.mjs ${{ matrix.target }} --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: installers-${{ matrix.os }}

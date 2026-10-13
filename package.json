@@ -1,132 +1,31 @@
 {
-  "name": "knowledge-vault-desktop",
+  "name": "knowledge-vault-desktop-monorepo",
   "version": "0.2.2",
-  "description": "Knowledge Vault Desktop — one-click Obsidian-compatible PARA/MOC/Zettelkasten vault creator",
-  "main": "src/main.js",
-  "author": "hutao-fmtech",
-  "license": "MIT",
   "private": true,
-  "scripts": {
-    "start": "electron .",
-    "dev": "electron .",
-    "smoke": "node scripts/smoke-create.js && node scripts/smoke-agent-write.js && node scripts/smoke-advanced.js",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder",
-    "dist:win": "electron-builder --win",
-    "dist:mac": "electron-builder --mac",
-    "dist:linux": "electron-builder --linux",
-    "dist:win:portable": "electron-builder --win --dir && node scripts/zip-win-portable.js",
-    "smoke:create": "node scripts/smoke-create.js",
-    "smoke:agent": "node scripts/smoke-agent-write.js",
-    "smoke:advanced": "node scripts/smoke-advanced.js"
-  },
+  "description": "Workspace root (pnpm). The app lives in apps/desktop; capabilities in packages/*.",
+  "license": "MIT",
+  "packageManager": "pnpm@9.15.9",
   "engines": {
     "node": ">=22.12"
   },
-  "build": {
-    "appId": "com.hutao.knowledgevault",
-    "productName": "Knowledge Vault",
-    "copyright": "Copyright © hutao-fmtech",
-    "directories": {
-      "output": "dist",
-      "buildResources": "build"
-    },
-    "files": [
-      "src/**/*",
-      "resources/template/**/*",
-      "package.json"
-    ],
-    "extraResources": [],
-    "asar": true,
-    "mac": {
-      "category": "public.app-category.productivity",
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
-        }
-      ],
-      "identity": null
-    },
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "signAndEditExecutable": false
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    },
-    "linux": {
-      "target": [
-        "AppImage"
-      ],
-      "category": "Office"
-    },
-    "forceCodeSigning": false,
-    "publish": null,
-    "asarUnpack": [
-      "src/runtime/**",
-      "node_modules/@deepseek-ai/**",
-      "node_modules/@cordisjs/**",
-      "node_modules/cosmokit/**",
-      "src/agent/advanced/**"
-    ],
-    "npmRebuild": false
+  "scripts": {
+    "start": "pnpm --filter knowledge-vault-desktop start",
+    "test": "pnpm -r test",
+    "check-boundaries": "node scripts/check-boundaries.mjs",
+    "smoke": "node scripts/smoke-create.js && node scripts/smoke-agent-write.js && node scripts/smoke-advanced.js",
+    "smoke:create": "node scripts/smoke-create.js",
+    "smoke:agent": "node scripts/smoke-agent-write.js",
+    "smoke:advanced": "node scripts/smoke-advanced.js",
+    "pack:desktop": "pnpm --filter knowledge-vault-desktop run pack",
+    "dist": "pnpm --filter knowledge-vault-desktop dist",
+    "dist:win": "pnpm --filter knowledge-vault-desktop dist:win",
+    "dist:mac": "pnpm --filter knowledge-vault-desktop dist:mac",
+    "dist:linux": "pnpm --filter knowledge-vault-desktop dist:linux",
+    "build:desktop": "node scripts/build-desktop.mjs"
   },
   "devDependencies": {
-    "electron": "39.8.10",
-    "electron-builder": "^25.1.8"
-  },
-  "dependencies": {
-    "@deepseek-ai/cordis": "4.0.4",
-    "@deepseek-ai/dsh-credentials": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-llm": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-llm-deepseek-api-key": "0.2.0-rc.2",
-    "@deepseek-ai/schemastery": "3.18.4",
-    "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-user-approval": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-system-prompt": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-agent": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-session": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-session-projection": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-agent-loop": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-sandbox-policy": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-sandbox-local": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-subprocess-local": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-bash-sandbox": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-bash-local": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-fs-sandbox": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-fs": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-tool-bash": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-tool-fs": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-jobs-local": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-llm-retry": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-shell": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-shell-env": "0.2.0-rc.2"
+    "acorn": "8.15.0",
+    "electron-builder": "^25.1.8",
+    "js-yaml": "4.3.2"
   }
 }

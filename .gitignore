@@ -6,3 +6,5 @@ out/
 Thumbs.db
 .idea/
 .vscode/
+.stage/
+apps/*/dist/
