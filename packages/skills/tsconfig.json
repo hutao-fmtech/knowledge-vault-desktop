@@ -1,0 +1,28 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "lib",
+    "rootDir": "src",
+    "tsBuildInfoFile": "lib/.tsbuildinfo"
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "../proposals"
+    },
+    {
+      "path": "../shared"
+    },
+    {
+      "path": "../skills-core"
+    },
+    {
+      "path": "../vault"
+    },
+    {
+      "path": "../search"
+    }
+  ]
+}

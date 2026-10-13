@@ -24,7 +24,7 @@ pnpm start                  # Electron UI (needs a display)
 
 ```
 apps/desktop/     Electron shell (main / preload / renderer), cordis.yml (plugin composition),
-                  runtime/boot.mjs (Cordis composition root), electron-builder config
+                  runtime/boot.ts (Cordis composition root), electron-builder config
 packages/         one package per capability (@kvd/*): vault, search, proposals, skills,
                   skills-core, llm-mock, keychain, privacy, prefs, ipc-bridge, advanced,
                   shared, template (the bundled Obsidian vault template)

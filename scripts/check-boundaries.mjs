@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Workspace dependency boundaries (mirrors dsh-orb scripts/check-boundaries.mjs, JS edition).
+ * Workspace dependency boundaries (mirrors dsh-orb scripts/check-boundaries.mjs; .ts via the TS AST, .js via acorn).
  *
  * For apps/* and packages/* (each a workspace package with its own package.json):
  *  1. every bare import specifier in src/ and test/ (static import/export-from,
@@ -22,16 +22,52 @@ import { isBuiltin } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as acorn from 'acorn';
+import ts from 'typescript';
 import yaml from 'js-yaml';
 
-const SOURCE_EXT = /\.(?:c|m)?js$/;
+const SOURCE_EXT = /\.(?:c|m)?[jt]s$/;
+const TS_EXT = /\.(?:c|m)?ts$/;
 
 export function packageNameOf(specifier) {
   return specifier.startsWith('@') ? specifier.split('/').slice(0, 2).join('/') : specifier.split('/')[0];
 }
 
-/** Collect string-literal module specifiers from JS source (comments/JSDoc ignored). */
+/**
+ * Collect module specifiers from TypeScript source via the TS AST. Type-only
+ * imports (`import type`, `export type ... from`, `typeof import('x')`) count:
+ * a package used only for its types must still be a declared dependency.
+ */
+export function sourceImportsTs(text, filename) {
+  const sf = ts.createSourceFile(filename, text, ts.ScriptTarget.Latest, true);
+  const out = [];
+  const push = (n) => {
+    if (n && (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n))) {
+      out.push({ specifier: n.text, line: sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1 });
+    }
+  };
+  const visit = (node) => {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) push(node.moduleSpecifier);
+    else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) push(node.moduleReference.expression);
+    else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) push(node.argument.literal);
+    else if (ts.isCallExpression(node)) {
+      const c = node.expression;
+      const isImport = c.kind === ts.SyntaxKind.ImportKeyword;
+      const isRequire = (ts.isIdentifier(c) && c.text === 'require')
+        || (ts.isCallExpression(c) && ts.isIdentifier(c.expression) && c.expression.text === 'createRequire');
+      if (isImport || isRequire) push(node.arguments[0]);
+    } else if (ts.isModuleDeclaration(node) && ts.isStringLiteral(node.name)) {
+      // `declare module 'x' { ... }` augmentation targets a dependency too.
+      push(node.name);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return out;
+}
+
+/** Collect string-literal module specifiers from JS/TS source (comments/JSDoc ignored). */
 export function sourceImports(text, filename) {
+  if (TS_EXT.test(filename)) return sourceImportsTs(text, filename);
   const sourceType = filename.endsWith('.cjs') || (filename.endsWith('.js') && !/^\s*(import|export)\s/m.test(text))
     ? 'script' : 'module';
   const ast = acorn.parse(text, { ecmaVersion: 'latest', sourceType, locations: true, allowHashBang: true, allowReturnOutsideFunction: true });

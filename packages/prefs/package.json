@@ -2,20 +2,29 @@
   "name": "@kvd/prefs",
   "version": "0.2.2",
   "private": true,
+  "type": "module",
   "description": "kvd-prefs: persisted user preferences (privacy consent etc.) in the app config dir.",
   "license": "MIT",
   "exports": {
-    ".": "./src/index.mjs"
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    }
   },
   "files": [
-    "src"
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "lib/**/*.d.ts.map"
   ],
   "scripts": {
-    "test": "node --test"
+    "test": "vitest run"
   },
   "dependencies": {
     "@deepseek-ai/cordis": "4.0.4",
     "@deepseek-ai/schemastery": "3.18.4",
     "@kvd/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "4.1.8"
   }
 }

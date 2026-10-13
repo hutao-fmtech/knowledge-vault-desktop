@@ -1,0 +1,47 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/advanced"
+    },
+    {
+      "path": "./packages/ipc-bridge"
+    },
+    {
+      "path": "./packages/keychain"
+    },
+    {
+      "path": "./packages/llm-mock"
+    },
+    {
+      "path": "./packages/prefs"
+    },
+    {
+      "path": "./packages/privacy"
+    },
+    {
+      "path": "./packages/proposals"
+    },
+    {
+      "path": "./packages/search"
+    },
+    {
+      "path": "./packages/shared"
+    },
+    {
+      "path": "./packages/skills"
+    },
+    {
+      "path": "./packages/skills-core"
+    },
+    {
+      "path": "./packages/template"
+    },
+    {
+      "path": "./packages/vault"
+    },
+    {
+      "path": "./apps/desktop"
+    }
+  ]
+}

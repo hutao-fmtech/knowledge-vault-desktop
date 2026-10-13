@@ -9,6 +9,9 @@
     "node": ">=22.12"
   },
   "scripts": {
+    "build": "tsc -b && node scripts/copy-renderer-assets.mjs",
+    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false",
+    "check-any": "node scripts/check-any.mjs",
     "start": "pnpm --filter knowledge-vault-desktop start",
     "test": "pnpm -r test",
     "check-boundaries": "node scripts/check-boundaries.mjs",
@@ -24,8 +27,11 @@
     "build:desktop": "node scripts/build-desktop.mjs"
   },
   "devDependencies": {
+    "@types/node": "22.20.0",
     "acorn": "8.15.0",
     "electron-builder": "^25.1.8",
-    "js-yaml": "4.3.2"
+    "js-yaml": "4.3.2",
+    "typescript": "6.0.3",
+    "vitest": "4.1.8"
   }
 }

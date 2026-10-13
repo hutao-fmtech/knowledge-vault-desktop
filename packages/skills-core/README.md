@@ -8,7 +8,7 @@ Library package (not a Cordis plugin row).
 
 | Specifier | File |
 | --- | --- |
-| `@kvd/skills-core` | `./src/index.mjs` |
+| `@kvd/skills-core` | `./src/index.ts` → `./lib/index.js` |
 
 Only these entry points may be imported by other workspace packages
 (`scripts/check-boundaries.mjs` enforces it).

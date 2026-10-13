@@ -2,16 +2,25 @@
   "name": "@kvd/template",
   "version": "0.2.2",
   "private": true,
+  "type": "module",
   "description": "The bundled Obsidian PARA/MOC/Zettelkasten vault template (data only).",
   "license": "MIT",
   "exports": {
-    ".": "./src/index.js"
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    }
   },
   "files": [
-    "src",
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "lib/**/*.d.ts.map",
     "template"
   ],
   "scripts": {
-    "test": "node --test"
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "4.1.8"
   }
 }

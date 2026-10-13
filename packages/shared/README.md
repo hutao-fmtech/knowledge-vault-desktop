@@ -8,8 +8,8 @@ Library package (not a Cordis plugin row).
 
 | Specifier | File |
 | --- | --- |
-| `@kvd/shared/models` | `./src/models.mjs` |
-| `@kvd/shared/config-dir` | `./src/config-dir.mjs` |
+| `@kvd/shared/models` | `./src/models.ts` → `./lib/models.js` |
+| `@kvd/shared/config-dir` | `./src/config-dir.ts` → `./lib/config-dir.js` |
 
 Only these entry points may be imported by other workspace packages
 (`scripts/check-boundaries.mjs` enforces it).

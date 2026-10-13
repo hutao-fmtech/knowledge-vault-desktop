@@ -1,0 +1,86 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true,
+    "rootDir": ".",
+    "paths": {
+      "@kvd/advanced/controller": [
+        "./packages/advanced/src/controller.ts"
+      ],
+      "@kvd/advanced/origin": [
+        "./packages/advanced/src/origin.ts"
+      ],
+      "@kvd/advanced/tool-log": [
+        "./packages/advanced/src/tool-log.ts"
+      ],
+      "@kvd/advanced/run-result": [
+        "./packages/advanced/src/run-result.ts"
+      ],
+      "@kvd/advanced/host": [
+        "./packages/advanced/src/host.ts"
+      ],
+      "@kvd/advanced/approval-bridge": [
+        "./packages/advanced/src/approval-bridge.ts"
+      ],
+      "@kvd/advanced/audit-log": [
+        "./packages/advanced/src/audit-log.ts"
+      ],
+      "@kvd/advanced/vault-tools": [
+        "./packages/advanced/src/vault-tools.ts"
+      ],
+      "@kvd/ipc-bridge": [
+        "./packages/ipc-bridge/src/index.ts"
+      ],
+      "@kvd/keychain": [
+        "./packages/keychain/src/index.ts"
+      ],
+      "@kvd/llm-mock": [
+        "./packages/llm-mock/src/index.ts"
+      ],
+      "@kvd/prefs": [
+        "./packages/prefs/src/index.ts"
+      ],
+      "@kvd/privacy": [
+        "./packages/privacy/src/index.ts"
+      ],
+      "@kvd/proposals": [
+        "./packages/proposals/src/index.ts"
+      ],
+      "@kvd/search": [
+        "./packages/search/src/index.ts"
+      ],
+      "@kvd/shared/models": [
+        "./packages/shared/src/models.ts"
+      ],
+      "@kvd/shared/config-dir": [
+        "./packages/shared/src/config-dir.ts"
+      ],
+      "@kvd/skills": [
+        "./packages/skills/src/index.ts"
+      ],
+      "@kvd/skills-core": [
+        "./packages/skills-core/src/index.ts"
+      ],
+      "@kvd/template": [
+        "./packages/template/src/index.ts"
+      ],
+      "@kvd/vault": [
+        "./packages/vault/src/index.ts"
+      ],
+      "@kvd/vault/create": [
+        "./packages/vault/src/create.ts"
+      ],
+      "@kvd/vault/sanitize": [
+        "./packages/vault/src/sanitize.ts"
+      ]
+    }
+  },
+  "include": [
+    "apps/*/test/**/*.ts",
+    "packages/*/test/**/*.ts",
+    "vitest.config.mts"
+  ]
+}

@@ -8,9 +8,9 @@ Mounted from `apps/desktop/cordis.yml`.
 
 | Specifier | File |
 | --- | --- |
-| `@kvd/vault` | `./src/index.mjs` |
-| `@kvd/vault/create` | `./src/create.js` |
-| `@kvd/vault/sanitize` | `./src/sanitize.js` |
+| `@kvd/vault` | `./src/index.ts` → `./lib/index.js` |
+| `@kvd/vault/create` | `./src/create.ts` → `./lib/create.js` |
+| `@kvd/vault/sanitize` | `./src/sanitize.ts` → `./lib/sanitize.js` |
 
 Only these entry points may be imported by other workspace packages
 (`scripts/check-boundaries.mjs` enforces it).

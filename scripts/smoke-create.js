@@ -3,7 +3,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { createVault, sanitizeVaultName } = require('../packages/vault/src/create.js');
+const { createVault, sanitizeVaultName } = require('../packages/vault/lib/create.js');
 
 // Version / release-tag guard (always: valid semver; with tag env: must match).
 (function assertPackageVersion() {
@@ -25,7 +25,7 @@ const { createVault, sanitizeVaultName } = require('../packages/vault/src/create
   }
 })();
 
-const templateRoot = require('../packages/template/src/index.js').templateRoot;
+const templateRoot = require('../packages/template/lib/index.js').templateRoot;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kvd-smoke-'));
 
 function assert(cond, msg) {

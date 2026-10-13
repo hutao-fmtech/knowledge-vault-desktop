@@ -6,6 +6,10 @@
  *  - every plugin row declared in apps/desktop/cordis.yml (default + advanced)
  *    was actually mounted by the packaged app
  *  - template shipped, dispose ran, KVD_PACK_SMOKE_OK printed
+ *  - the entry is the compiled lib/main.js inside app.asar (R2: tsc output)
+ *  - app.getVersion() === apps/desktop/package.json version
+ *  - the real renderer launches: preload exposes vaultApi, app.js renders the
+ *    template labels over IPC, and its IPC is classified LOCAL (not REMOTE)
  * Usage: node scripts/assert-pack-smoke.mjs <pack-smoke-output.txt>
  */
 import fs from 'node:fs';
@@ -39,6 +43,13 @@ const extra = mounted.filter((id) => !expected.includes(id));
 if (missing.length) fail(`plugins declared in cordis.yml but not mounted: ${missing.join(',')}`);
 if (extra.length) fail(`plugins mounted but not declared: ${extra.join(',')}`);
 if (Number(count) !== expected.length) fail(`count ${count} != ${expected.length}`);
+const appPkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'apps', 'desktop', 'package.json'), 'utf8'));
+const ver = (line('KVD_APP_VERSION') || '').split(' ')[1];
+if (ver !== appPkg.version) fail(`app version ${ver} != apps/desktop/package.json ${appPkg.version}`);
+const entry = line('KVD_ENTRY');
+if (entry !== 'KVD_ENTRY lib/main.js asar') fail(`entry is not lib/main.js in asar: ${entry}`);
+const renderer = JSON.parse((line('KVD_RENDERER') || 'KVD_RENDERER {}').slice('KVD_RENDERER '.length));
+if (!renderer.ok || renderer.vaultApi !== 'object' || !(renderer.labels > 0) || renderer.localIpc !== true) fail(`renderer launch probe failed: ${JSON.stringify(renderer)}`);
 for (const tag of ['KVD_SMOKE_MOUNT', 'KVD_TEMPLATE_OK', 'KVD_PACK_SMOKE_OK']) if (!line(tag)) fail(`missing ${tag}`);
 for (const id of expected) console.log(`  plugin ok: ${id}`);
-console.log(`PACK_SMOKE_ASSERT_OK node=${nodeVer} plugins=${mounted.length}/${expected.length} source=cordis.yml(asar)`);
+console.log(`PACK_SMOKE_ASSERT_OK version=${ver} entry=lib/main.js(asar) node=${nodeVer} plugins=${mounted.length}/${expected.length} source=cordis.yml(asar)`);

@@ -8,14 +8,14 @@ Mounted from `apps/desktop/cordis.yml`.
 
 | Specifier | File |
 | --- | --- |
-| `@kvd/advanced/controller` | `./src/controller.js` |
-| `@kvd/advanced/origin` | `./src/origin.js` |
-| `@kvd/advanced/tool-log` | `./src/tool-log.js` |
-| `@kvd/advanced/run-result` | `./src/run-result.js` |
-| `@kvd/advanced/host` | `./src/host.mjs` |
-| `@kvd/advanced/approval-bridge` | `./src/approval-bridge.mjs` |
-| `@kvd/advanced/audit-log` | `./src/audit-log.mjs` |
-| `@kvd/advanced/vault-tools` | `./src/vault-tools.mjs` |
+| `@kvd/advanced/controller` | `./src/controller.ts` → `./lib/controller.js` |
+| `@kvd/advanced/origin` | `./src/origin.ts` → `./lib/origin.js` |
+| `@kvd/advanced/tool-log` | `./src/tool-log.ts` → `./lib/tool-log.js` |
+| `@kvd/advanced/run-result` | `./src/run-result.ts` → `./lib/run-result.js` |
+| `@kvd/advanced/host` | `./src/host.ts` → `./lib/host.js` |
+| `@kvd/advanced/approval-bridge` | `./src/approval-bridge.ts` → `./lib/approval-bridge.js` |
+| `@kvd/advanced/audit-log` | `./src/audit-log.ts` → `./lib/audit-log.js` |
+| `@kvd/advanced/vault-tools` | `./src/vault-tools.ts` → `./lib/vault-tools.js` |
 
 Only these entry points may be imported by other workspace packages
 (`scripts/check-boundaries.mjs` enforces it).

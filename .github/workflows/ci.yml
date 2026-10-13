@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   checks:
-    name: boundaries + unit tests
+    name: build + typecheck + any-gate + boundaries + unit tests
     runs-on: ubuntu-latest
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
@@ -22,11 +22,24 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: check-boundaries (undeclared deps / cross-package relative imports / cycles fail)
+      - name: RS-9 tsc -b (strict, project references) — must be 0 errors
+        run: |
+          set -o pipefail
+          pnpm exec tsc -b --pretty false 2>&1 | tee tsc.txt
+          N=$(grep -c 'error TS' tsc.txt || true)
+          echo "TSC_ERRORS=$N"
+          [ "$N" -eq 0 ]
+      - name: RS-9 typecheck tests (tsconfig.test.json)
+        run: pnpm exec tsc -p tsconfig.test.json --pretty false
+      - name: RS-9 every any / ts-ignore / ts-expect-error carries an inline `// any:` reason
+        run: node scripts/check-any.mjs
+      - name: renderer assets next to the compiled renderer
+        run: node scripts/copy-renderer-assets.mjs
+      - name: check-boundaries (.ts + type-only imports; undeclared deps / cross-package relative imports / cycles fail)
         run: pnpm run check-boundaries
-      - name: check-boundaries self-test
+      - name: check-boundaries + check-any self-tests
         run: node --test scripts/test/*.test.mjs
-      - name: unit tests (every workspace package)
+      - name: unit tests (vitest, every workspace package)
         run: pnpm -r test
 
   smoke:
@@ -45,6 +58,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: build (tsc -b) — smokes run against the compiled lib/ output
+        run: pnpm run build
       - run: pnpm run smoke | tee smoke.txt
       - name: RS-7 smoke counts only increase
         run: |
@@ -52,7 +67,7 @@ jobs:
           A=$(grep -oP 'AGENT_SMOKE_OK \K[0-9]+(?= asserts)' smoke.txt)
           B=$(grep -oP 'ADVANCED_SMOKE_OK \K[0-9]+(?= checks)' smoke.txt)
           echo "AGENT_SMOKE_OK=$A ADVANCED_SMOKE_OK=$B"
-          [ "$A" -ge 114 ] && [ "$B" -ge 109 ]
+          [ "$A" -ge 264 ] && [ "$B" -ge 117 ]
 
   pack-smoke:
     name: pack-smoke (asar + Electron Node + cordis.yml composition)
@@ -66,7 +81,7 @@ jobs:
           cache: pnpm
       - run: sudo apt-get update && sudo apt-get install -y xvfb
       - run: pnpm install --frozen-lockfile
-      - name: electron-builder --dir (staged via pnpm deploy)
+      - name: tsc -b + electron-builder --dir (staged via pnpm deploy; packs lib/)
         run: node scripts/build-desktop.mjs --dir --linux
       - name: launch packaged app (xvfb) and assert every cordis.yml plugin mounted
         run: |
