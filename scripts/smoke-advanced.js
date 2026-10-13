@@ -197,6 +197,10 @@ async function partA(tmp) {
     '@deepseek-ai/dsh-tools',
     '@deepseek-ai/dsh-user-approval',
     '@deepseek-ai/dsh-tool-bash',
+    '@deepseek-ai/dsh-bash-sandbox',
+    '@deepseek-ai/dsh-tool-pwsh',
+    '@deepseek-ai/dsh-pwsh-sandbox',
+    '@deepseek-ai/dsh-pwsh-local',
     '@deepseek-ai/dsh-sandbox-policy',
   ]) {
     ok(pkg.dependencies[name] === '0.2.0-rc.2', `${name} pinned exactly to 0.2.0-rc.2`);
@@ -391,11 +395,37 @@ async function partB(tmp) {
     getModelRoute: () => route,
   });
   const vaultBefore = snapshotTree(vault);
+  // Advanced shell per platform (cordis.yml `platforms`): bash on macOS/Linux,
+  // PowerShell on Windows (issue #18). Same checks, real sandbox, both shells.
+  const comp = await import('../apps/desktop/lib/runtime/composition.js');
+  const SH = process.platform === 'win32' ? 'pwsh' : 'bash';
+  const SH_CMD = SH === 'pwsh'
+    ? {
+        pwn: "Set-Content -Path pwned.txt -Value pwned; Get-Content -Encoding utf8 '01-收件箱/idea.md'",
+        allow: "Set-Content -Path pwned2.txt -Value pwned2; Get-Content -Encoding utf8 '01-收件箱/idea.md'; Get-ChildItem -Name",
+        read: "Get-Content -Encoding utf8 '01-收件箱/idea.md'",
+        ls: 'Get-ChildItem -Name',
+        noop: 'Write-Output ok',
+      }
+    : {
+        pwn: 'echo pwned > pwned.txt && cat 01-收件箱/idea.md',
+        allow: 'echo pwned2 > pwned2.txt; cat 01-收件箱/idea.md; ls',
+        read: 'cat 01-收件箱/idea.md',
+        ls: 'ls',
+        noop: 'true',
+      };
+  console.log(`  advanced shell tool on ${process.platform}: ${SH}`);
+  ok(comp.shellToolOf(comp.ADVANCED_ROWS) === SH, `cordis.yml mounts exactly the ${SH} shell tool on ${process.platform}`);
+  ok(comp.ADVANCED_ROWS.filter((r) => /^dsh-tool-(bash|pwsh)$/.test(r.id)).length === 1, 'exactly one shell tool row mounts per platform');
+  {
+    const prompt = comp.advancedRowsFor({ workspaceRoot: vault }).find((r) => r.id === 'dsh-system-prompt').config.personaPrefix;
+    ok(!prompt.includes('{{shellTool}}') && prompt.includes('`' + SH + '`') && (SH === 'pwsh' ? /PowerShell/.test(prompt) && /there is no bash/.test(prompt) : !/pwsh|PowerShell/.test(prompt)), `system prompt names the ${SH === 'pwsh' ? 'PowerShell' : 'bash'} shell tool`);
+  }
 
   try {
     let threw = null;
     try {
-      await host.runTool({ name: 'bash', arguments: { command: 'echo hi', description: 'x' }, callId: 'pre' });
+      await host.runTool({ name: SH, arguments: { command: 'echo hi', description: 'x' }, callId: 'pre' });
     } catch (e) {
       threw = e.message;
     }
@@ -403,36 +433,37 @@ async function partB(tmp) {
 
     ctl.enable(localOrigin(), { acknowledgeRisk: true });
 
-    const pwnCmd = 'echo pwned > pwned.txt && cat 01-收件箱/idea.md';
+    const pwnCmd = SH_CMD.pwn;
     answer = 'deny';
     let res = await host.runTool({
-      name: 'bash',
+      name: SH,
       arguments: { command: pwnCmd, description: 'smoke deny' },
       callId: 'toolu_deny',
     });
     ok(host.status().running && isAdvancedMounted(), 'advanced on: composition advanced fiber mounted');
-    const a1 = approvals.find((x) => x.tool === 'bash');
+    const a1 = approvals.find((x) => x.tool === SH);
     ok(a1 && a1.command === pwnCmd && a1.arguments.description === 'smoke deny', 'real call intercepted BEFORE execution with full command + all arguments (AC-13)');
     ok(JSON.stringify(a1.arguments) === JSON.stringify({ command: pwnCmd, description: 'smoke deny' }), 'approval modal payload includes ALL arguments');
+    ok(a1.commandLanguage === (SH === 'pwsh' ? 'PowerShell' : 'bash'), `approval dialog labels the command as ${SH === 'pwsh' ? 'PowerShell' : 'bash'}`);
     ok(res.isError, 'deny returns an error tool result');
     ok(!fs.existsSync(path.join(vault, 'pwned.txt')), 'Deny prevents execution (file not created)');
-    ok(log.read().some((x) => x.event === 'tool-result' && x.tool === 'bash' && x.isError), 'denied call reported as error result and logged');
+    ok(log.read().some((x) => x.event === 'tool-result' && x.tool === SH && x.isError), 'denied call reported as error result and logged');
 
     answer = 'allow';
     res = await host.runTool({
-      name: 'bash',
-      arguments: { command: 'echo pwned2 > pwned2.txt; cat 01-收件箱/idea.md; ls', description: 'smoke allow' },
+      name: SH,
+      arguments: { command: SH_CMD.allow, description: 'smoke allow' },
       callId: 'toolu_allow',
     });
-    const r2 = log.read().filter((x) => x.event === 'tool-result' && x.tool === 'bash').pop();
+    const r2 = log.read().filter((x) => x.event === 'tool-result' && x.tool === SH).pop();
     ok(r2 && typeof r2.output === 'string', 'approved call executed and its result was logged');
     console.log(`    (sandbox output: ${JSON.stringify((r2.output || '').replace(/\u0000/g, '').slice(0, 400))})`);
     ok(!fs.existsSync(path.join(vault, 'pwned2.txt')), 'approved command still cannot write: sandbox is read-only');
-    // Issue #18: the absence of pwned2.txt alone is vacuous if bash never ran
-    // (e.g. Windows resolving the WSL launcher). Prove the confined bash really
-    // executed: the read of the note and the `ls` listing must be in the output.
-    ok(/离线 smoke/.test(r2.output || '') && /01-收件箱/.test(r2.output || ''), 'read-only check is not vacuous: confined bash actually ran (read + ls output present)');
-    ok(!/E_ACCESSDENIED|Error code: Bash/.test((r2.output || '').replace(/\u0000/g, '')), 'sandbox bash is not the WSL launcher (no Bash/E_ACCESSDENIED)');
+    // Issue #18: the absence of pwned2.txt alone is vacuous if the shell never ran
+    // (Windows: WSL launcher / MSYS2 under the restricted token). Prove the confined
+    // shell really executed: the note text and the directory listing are in the output.
+    ok(/离线 smoke/.test(r2.output || '') && /01-收件箱/.test(r2.output || ''), `read-only check is not vacuous: confined ${SH} actually ran (read + listing output present)`);
+    ok(!/E_ACCESSDENIED|Error code: Bash|fatal error - /.test((r2.output || '').replace(/\u0000/g, '')), `sandbox ${SH} is a working shell (no WSL launcher Bash/E_ACCESSDENIED, no MSYS2 fatal error)`);
 
     answer = 'allow';
     res = await host.runTool({
@@ -457,7 +488,7 @@ async function partB(tmp) {
       answer = 'allow';
       const nA = approvals.length;
       scripted.queue.push(
-        { tool: 'bash', input: { command: 'cat 01-收件箱/idea.md', description: 'read note' } },
+        { tool: SH, input: { command: SH_CMD.read, description: 'read note' } },
         { text: '笔记内容是：离线 smoke 笔记。' },
       );
       const run1 = await host.run({ prompt: '读一下 idea.md 并告诉我内容', timeoutMs: 30000 });
@@ -465,17 +496,17 @@ async function partB(tmp) {
       const userMsgs = (firstReq || []).filter((m) => m.role === 'user');
       ok(userMsgs.some((m) => JSON.stringify(m.content).includes('读一下 idea.md')), "AC3: prompt reaches the model as a role:'user' message");
       const ap = approvals.slice(nA);
-      ok(ap.length === 1 && ap[0].tool === 'bash' && ap[0].command === 'cat 01-收件箱/idea.md', 'AC3: model tool call raised exactly one approval request with the full command');
-      ok(run1.toolCalls.length === 1 && run1.toolCalls[0].name === 'bash' && /离线 smoke/.test(run1.toolCalls[0].output || ''), 'AC3: approved call executed; its result is in the run summary');
+      ok(ap.length === 1 && ap[0].tool === SH && ap[0].command === SH_CMD.read, 'AC3: model tool call raised exactly one approval request with the full command');
+      ok(run1.toolCalls.length === 1 && run1.toolCalls[0].name === SH && /离线 smoke/.test(run1.toolCalls[0].output || ''), 'AC3: approved call executed; its result is in the run summary');
       ok(run1.answer === '笔记内容是：离线 smoke 笔记。' && !run1.timedOut, 'AC3: final model answer returned by host.run');
       const ipc = advancedRunResult(run1, host.status());
-      ok(ipc.ok && ipc.answer === run1.answer && ipc.toolCalls[0].name === 'bash' && ipc.toolCalls[0].command === 'cat 01-收件箱/idea.md', 'AC3: IPC result carries answer + tool-call summary for the UI');
+      ok(ipc.ok && ipc.answer === run1.answer && ipc.toolCalls[0].name === SH && ipc.toolCalls[0].command === SH_CMD.read, 'AC3: IPC result carries answer + tool-call summary for the UI');
       ok(run1.route === 'kvd-smoke-scripted/scripted', 'run used the configured model route');
 
       // Deny path through the model loop
       answer = 'deny';
       scripted.queue.push(
-        { tool: 'bash', input: { command: 'ls', description: 'list' } },
+        { tool: SH, input: { command: SH_CMD.ls, description: 'list' } },
         { text: '用户拒绝了。' },
       );
       const runDeny = await host.run({ prompt: '列一下文件', timeoutMs: 30000 });
@@ -485,9 +516,9 @@ async function partB(tmp) {
       answer = 'allow'; // even if a modal appeared, the user would click Allow
       const nB = approvals.length;
       scripted.queue.push(
-        { tool: 'bash', input: { command: 'echo esc > esc.txt', description: 'write' } },
-        { tool: 'bash', input: { command: 'echo esc > esc.txt', description: 'write', sandbox_permissions: 'workspace-write', justification: 'need to write the note' } },
-        { tool: 'bash', input: { command: 'echo esc > esc2.txt', description: 'write', sandbox_permissions: 'danger-full-access', justification: 'really' } },
+        { tool: SH, input: { command: 'echo esc > esc.txt', description: 'write' } },
+        { tool: SH, input: { command: 'echo esc > esc.txt', description: 'write', sandbox_permissions: 'workspace-write', justification: 'need to write the note' } },
+        { tool: SH, input: { command: 'echo esc > esc2.txt', description: 'write', sandbox_permissions: 'danger-full-access', justification: 'really' } },
         { text: '无法写入。' },
       );
       const runEsc = await host.run({ prompt: '在 vault 里写一个 esc.txt', timeoutMs: 30000 });
@@ -511,7 +542,7 @@ async function partB(tmp) {
     ctl.setPolicy(localOrigin(), 'log-only', { acknowledgeRisk: true });
     const n = approvals.length;
     res = await host.runTool({
-      name: 'bash',
+      name: SH,
       arguments: { command: 'ls 01-收件箱', description: 'smoke log-only' },
       callId: 'toolu_lo',
     });
@@ -522,8 +553,8 @@ async function partB(tmp) {
     {
       const nL = approvals.length;
       scripted.queue.push(
-        { tool: 'bash', input: { command: 'echo lo > lo.txt', description: 'write' } },
-        { tool: 'bash', input: { command: 'echo lo > lo.txt', description: 'write', sandbox_permissions: 'workspace-write', justification: 'log-only bypass' } },
+        { tool: SH, input: { command: 'echo lo > lo.txt', description: 'write' } },
+        { tool: SH, input: { command: 'echo lo > lo.txt', description: 'write', sandbox_permissions: 'workspace-write', justification: 'log-only bypass' } },
         { text: '写入失败。' },
       );
       const runLo = await host.run({ prompt: 'log-only 下写 lo.txt', timeoutMs: 30000 });
@@ -545,7 +576,7 @@ async function partB(tmp) {
     ok(!host.status().running && !isAdvancedMounted(), 'disable stops/unmounts the advanced fiber immediately (AC-12)');
     threw = null;
     try {
-      await host.runTool({ name: 'bash', arguments: { command: 'true', description: 'x' }, callId: 'after' });
+      await host.runTool({ name: SH, arguments: { command: SH_CMD.noop, description: 'x' }, callId: 'after' });
     } catch (e) {
       threw = e.message;
     }

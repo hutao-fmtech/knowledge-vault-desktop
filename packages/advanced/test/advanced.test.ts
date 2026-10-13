@@ -1,3 +1,4 @@
+import { commandLanguageOf } from '../src/approval-bridge.js';
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -38,4 +39,10 @@ test('controller defaults to off; tool log redacts secrets', () => {
 
 test('host requires an injected composition-root handle (no app import)', () => {
   assert.throws(() => createAdvancedHost({} as unknown as HostDeps) /* deliberately invalid deps */, /deps\.runtime/);
+});
+
+test('approval dialog labels pwsh as PowerShell and bash as bash', () => {
+  assert.equal(commandLanguageOf('pwsh'), 'PowerShell');
+  assert.equal(commandLanguageOf('bash'), 'bash');
+  assert.equal(commandLanguageOf('vault_propose_change'), null);
 });

@@ -33,7 +33,7 @@ const src = line('KVD_COMPOSITION_SOURCE');
 if (!src || !/cordis\.yml asar$/.test(src)) fail(`composition not read from cordis.yml in asar: ${src}`);
 
 const rows = yaml.load(fs.readFileSync(path.join(ROOT, 'apps', 'desktop', 'cordis.yml'), 'utf8'), { schema: yaml.CORE_SCHEMA });
-const expected = rows.flatMap((r) => (Array.isArray(r.children) ? r.children : [r])).filter((r) => !r.disabled).map((r) => r.id);
+const expected = rows.flatMap((r) => (Array.isArray(r.children) ? r.children : [r])).filter((r) => !r.disabled && (!r.platforms || r.platforms.includes(process.platform))).map((r) => r.id);
 const mountedLine = line('KVD_PLUGINS_MOUNTED');
 if (!mountedLine) fail('no KVD_PLUGINS_MOUNTED line');
 const [, count, list = ''] = mountedLine.split(' ');

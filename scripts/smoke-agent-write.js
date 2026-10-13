@@ -506,6 +506,9 @@ function assert(cond, msg) {
     '@deepseek-ai/dsh-credentials': '0.2.0-rc.2',
     '@deepseek-ai/dsh-llm': '0.2.0-rc.2',
     '@deepseek-ai/dsh-llm-deepseek-api-key': '0.2.0-rc.2',
+    '@deepseek-ai/dsh-tool-pwsh': '0.2.0-rc.2',
+    '@deepseek-ai/dsh-pwsh-sandbox': '0.2.0-rc.2',
+    '@deepseek-ai/dsh-pwsh-local': '0.2.0-rc.2',
     '@deepseek-ai/schemastery': '3.18.4',
   };
   for (const [name, ver] of Object.entries(exactPins)) {
