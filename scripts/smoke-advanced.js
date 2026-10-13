@@ -426,13 +426,13 @@ async function partB(tmp) {
     });
     const r2 = log.read().filter((x) => x.event === 'tool-result' && x.tool === 'bash').pop();
     ok(r2 && typeof r2.output === 'string', 'approved call executed and its result was logged');
+    console.log(`    (sandbox output: ${JSON.stringify((r2.output || '').replace(/\u0000/g, '').slice(0, 400))})`);
     ok(!fs.existsSync(path.join(vault, 'pwned2.txt')), 'approved command still cannot write: sandbox is read-only');
     // Issue #18: the absence of pwned2.txt alone is vacuous if bash never ran
     // (e.g. Windows resolving the WSL launcher). Prove the confined bash really
     // executed: the read of the note and the `ls` listing must be in the output.
     ok(/离线 smoke/.test(r2.output || '') && /01-收件箱/.test(r2.output || ''), 'read-only check is not vacuous: confined bash actually ran (read + ls output present)');
     ok(!/E_ACCESSDENIED|Error code: Bash/.test((r2.output || '').replace(/\u0000/g, '')), 'sandbox bash is not the WSL launcher (no Bash/E_ACCESSDENIED)');
-    console.log(`    (sandbox output: ${JSON.stringify((r2.output || '').slice(0, 160))})`);
 
     answer = 'allow';
     res = await host.runTool({
