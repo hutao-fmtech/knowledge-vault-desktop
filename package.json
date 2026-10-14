@@ -1,6 +1,6 @@
 {
   "name": "knowledge-vault-desktop-monorepo",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "description": "Workspace root (pnpm). The app lives in apps/desktop; capabilities in packages/*.",
   "license": "MIT",
