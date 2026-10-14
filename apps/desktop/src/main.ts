@@ -94,6 +94,24 @@ async function runPackSmoke(): Promise<void> {
     app.exit(5);
     return;
   }
+  // v0.2.3 regression: every @deepseek-ai module reachable from dsh-session must
+  // resolve + import from inside app.asar, and an advanced task must reach
+  // approval/request offline (scripted model on kvd-mock; the call is denied).
+  const { probeDshImports, probeAdvancedTask } = await import('./runtime/pack-smoke-advanced.js');
+  const dsh = await probeDshImports(path.join(HERE, '..', 'package.json'));
+  console.log('KVD_DSH_IMPORTS', JSON.stringify(dsh));
+  if (!dsh.ok) {
+    console.error('KVD_PACK_SMOKE_FAIL dsh imports', JSON.stringify(dsh.failures), dsh.outsideAsar.join(','));
+    app.exit(8);
+    return;
+  }
+  const task = await probeAdvancedTask();
+  console.log('KVD_ADVANCED_TASK', JSON.stringify(task));
+  if (!task.ok) {
+    console.error('KVD_PACK_SMOKE_FAIL advanced task', JSON.stringify(task));
+    app.exit(9);
+    return;
+  }
   const { disposeRuntime, wasDisposeCalled } = await import('./runtime/boot.js');
   await disposeRuntime();
   if (!wasDisposeCalled()) {

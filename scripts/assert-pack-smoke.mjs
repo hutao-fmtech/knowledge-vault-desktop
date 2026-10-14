@@ -8,6 +8,8 @@
  *  - template shipped, dispose ran, KVD_PACK_SMOKE_OK printed
  *  - the entry is the compiled lib/main.js inside app.asar (R2: tsc output)
  *  - app.getVersion() === apps/desktop/package.json version
+ *  - every @deepseek-ai module reachable from dsh-session imports inside app.asar,
+ *    and an offline advanced task reaches approval/request (v0.2.3 dsh-scope bug)
  *  - the real renderer launches: preload exposes vaultApi, app.js renders the
  *    template labels over IPC, and its IPC is classified LOCAL (not REMOTE)
  * Usage: node scripts/assert-pack-smoke.mjs <pack-smoke-output.txt>
@@ -50,6 +52,11 @@ const entry = line('KVD_ENTRY');
 if (entry !== 'KVD_ENTRY lib/main.js asar') fail(`entry is not lib/main.js in asar: ${entry}`);
 const renderer = JSON.parse((line('KVD_RENDERER') || 'KVD_RENDERER {}').slice('KVD_RENDERER '.length));
 if (!renderer.ok || renderer.vaultApi !== 'object' || !(renderer.labels > 0) || renderer.localIpc !== true) fail(`renderer launch probe failed: ${JSON.stringify(renderer)}`);
+const dsh = JSON.parse((line('KVD_DSH_IMPORTS') || 'KVD_DSH_IMPORTS {}').slice('KVD_DSH_IMPORTS '.length));
+if (!dsh.ok || !Array.isArray(dsh.modules) || !dsh.modules.includes('@deepseek-ai/dsh-session') || !dsh.modules.includes('@deepseek-ai/dsh-scope')) fail(`dsh-* closure did not import from asar: ${JSON.stringify(dsh)}`);
+const task = JSON.parse((line('KVD_ADVANCED_TASK') || 'KVD_ADVANCED_TASK {}').slice('KVD_ADVANCED_TASK '.length));
+if (!task.ok || !(task.approvals > 0) || task.executed !== false) fail(`advanced task did not reach approval/request offline: ${JSON.stringify(task)}`);
 for (const tag of ['KVD_SMOKE_MOUNT', 'KVD_TEMPLATE_OK', 'KVD_PACK_SMOKE_OK']) if (!line(tag)) fail(`missing ${tag}`);
 for (const id of expected) console.log(`  plugin ok: ${id}`);
+console.log(`  dsh modules imported: ${dsh.count}; advanced task approvals: ${task.approvals}`);
 console.log(`PACK_SMOKE_ASSERT_OK version=${ver} entry=lib/main.js(asar) node=${nodeVer} plugins=${mounted.length}/${expected.length} source=cordis.yml(asar)`);
