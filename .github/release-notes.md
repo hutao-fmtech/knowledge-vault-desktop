@@ -1,3 +1,22 @@
+## Knowledge Vault v0.2.4（预发布 / pre-release）
+
+### 变更
+- **修复打包缺依赖**：electron-builder 25 不会把 peerDependencies 打进 app.asar，导致 `dsh-session` 等包声明的 `@deepseek-ai/dsh-scope` 等 22 个包在安装包里静默缺失；v0.2.3 Mac 真机上每条高级任务约 2 秒失败（#22）。
+- **apps/desktop 显式精确钉死**所有可达的 `@deepseek-ai/*`（dsh-* 均为 `0.2.0-rc.2`，AC-8 不变）。
+- **pack-smoke 加强**：在打包后的 asar 内导入全部可达模块（缺或落到 asar 外即失败），并离线 mock 跑一次高级任务直至审批弹窗，Deny 后不执行。
+
+### 待真机验证
+- Mac 上重测高级档检查 2（审批完整命令 + Approve/Deny）与 3（只读沙箱 / 提案→Apply）。
+- #20（Windows）仍为已知限制。
+
+### English (brief)
+- Fix missing `@deepseek-ai/dsh-scope` (and 21 other peer deps) in the packaged asar (#22).
+- Stricter pack-smoke: asar import check + offline advanced task through approval/deny.
+- Pending: Mac retest of advanced checks 2 and 3; #20 remains a known Windows limit.
+
+CI: pack-smoke asserts asar packages + advanced approval path; version 0.2.4.
+
+
 ## Knowledge Vault v0.2.3（预发布 / pre-release）
 
 ### 变更
