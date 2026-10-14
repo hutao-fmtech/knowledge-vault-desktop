@@ -119,30 +119,53 @@ jobs:
           T=$(ls apps/desktop/dist | grep -cE '\.(exe|dmg|zip|AppImage)$' || true)
           echo "installers with version $V: $N/$T"
           [ "$T" -gt 0 ] && [ "$N" -eq "$T" ]
-      - uses: actions/upload-artifact@v4
-        with:
-          name: installers-${{ matrix.os }}
-          path: ${{ matrix.artifacts }}
-          if-no-files-found: error
-
-  release:
-    needs: build
-    # Package-only dispatches (publish=false, the default) stop after build: no tag, no release.
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish && inputs.tag != '')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          path: out
-          merge-multiple: true
-      - name: Publish GitHub Release
+      # Prefer direct release upload: Actions artifact storage can hit quota even when
+      # GitHub Release storage is fine (quota recalc is 6-12h after deletes).
+      - name: Upload installers to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish && inputs.tag != '')
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          ls -la out
+          set -euo pipefail
+          shopt -s nullglob
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --title "Knowledge Vault $TAG" --notes-file .github/release-notes.md --prerelease
           fi
-          gh release upload "$TAG" out/* --clobber
+          case "${{ matrix.os }}" in
+            windows-latest) files=(apps/desktop/dist/*.exe apps/desktop/dist/*-portable.zip) ;;
+            macos-latest) files=(apps/desktop/dist/*.dmg apps/desktop/dist/*-mac.zip) ;;
+            ubuntu-latest) files=(apps/desktop/dist/*.AppImage) ;;
+            *) echo "::error::unknown matrix.os ${{ matrix.os }}"; exit 1 ;;
+          esac
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::No installer files found for ${{ matrix.os }}"
+            ls -la apps/desktop/dist || true
+            exit 1
+          fi
+          ls -la "${files[@]}"
+          gh release upload "$TAG" "${files[@]}" --clobber
+      - uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: installers-${{ matrix.os }}
+          path: ${{ matrix.artifacts }}
+          if-no-files-found: warn
+
+  release:
+    needs: build
+    # Package-only dispatches (publish=false, the default) stop after build: no tag, no release.
+    # Assets are attached by each build job; this job only ensures the release exists.
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish && inputs.tag != '')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure GitHub Release exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "Knowledge Vault $TAG" --notes-file .github/release-notes.md --prerelease
+          fi
+          gh release view "$TAG"
