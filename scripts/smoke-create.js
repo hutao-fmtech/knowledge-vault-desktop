@@ -47,6 +47,21 @@ assert(res.ok, res.error || 'create failed');
 assert(fs.existsSync(path.join(res.vaultPath, '00-系统')), 'missing 00-系统');
 assert(fs.existsSync(path.join(res.vaultPath, '.obsidian')), 'missing .obsidian');
 
+// W1 §4: 公众号 subtree present after create-vault
+const oaRequired = [
+  '00-系统/公众号/voice.md',
+  '01-收件箱/公众号线索',
+  '10-卡片盒/公众号/briefs',
+  '10-卡片盒/公众号/drafts',
+  '10-卡片盒/公众号/review',
+  '90-附件/公众号/layout',
+  '05-归档/公众号',
+  '04-资源/公众号/analytics',
+];
+for (const rel of oaRequired) {
+  assert(fs.existsSync(path.join(res.vaultPath, ...rel.split('/'))), 'missing OA path ' + rel);
+}
+
 const clash = createVault({
   parentDir: tmp,
   rawName: 'Smoke_Vault',

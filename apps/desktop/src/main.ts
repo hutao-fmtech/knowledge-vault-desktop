@@ -521,6 +521,32 @@ ipcMain.handle('agent-list-inbox', async () => {
   }
 });
 
+ipcMain.handle('agent-list-wechat-oa', async () => {
+  if (!activeVault) return { ok: false, error: '未打开 vault' };
+  try {
+    const ctx = await getRuntimeCtx();
+    await syncVaultService(activeVault);
+    const vaultSearch = ctx.get('vaultSearch');
+    if (!vaultSearch) return { ok: false, error: 'vaultSearch service missing' };
+    return vaultSearch.listWechatOa();
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) };
+  }
+});
+
+ipcMain.handle('agent-open-note', async (_e, noteRel: unknown) => {
+  if (!activeVault) return { ok: false, error: '未打开 vault' };
+  try {
+    const ctx = await getRuntimeCtx();
+    await syncVaultService(activeVault);
+    const vaultSearch = ctx.get('vaultSearch');
+    if (!vaultSearch) return { ok: false, error: 'vaultSearch service missing' };
+    return vaultSearch.readNote(String(noteRel ?? ''));
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) };
+  }
+});
+
 async function stashProposals(result: SkillResult): Promise<SkillResult & { proposalIds?: string[] }> {
   if (!result || !result.ok) return result;
   try {

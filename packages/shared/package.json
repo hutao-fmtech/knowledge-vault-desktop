@@ -3,7 +3,7 @@
   "version": "0.2.2",
   "private": true,
   "type": "module",
-  "description": "Shared constants: model routes and the app config directory (outside any vault).",
+  "description": "Shared constants: model routes, app config dir, WeChat OA vault paths.",
   "license": "MIT",
   "exports": {
     "./models": {
@@ -13,6 +13,10 @@
     "./config-dir": {
       "types": "./lib/config-dir.d.ts",
       "default": "./lib/config-dir.js"
+    },
+    "./wechat-oa": {
+      "types": "./lib/wechat-oa.d.ts",
+      "default": "./lib/wechat-oa.js"
     }
   },
   "files": [

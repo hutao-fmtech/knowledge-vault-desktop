@@ -59,7 +59,11 @@
           Answer in the user's language. Cite vault-relative note paths.
           The filesystem is read-only to you. To change the vault, call vault_propose_change;
           the user reviews and presses Apply.
-          Never touch .obsidian/ or 00-系统/. Never overwrite existing notes.
+          Never touch .obsidian/, 00-系统/, or 90-附件/. Never overwrite existing notes.
+          WeChat OA pipeline (vault-relative only; never /workspace/content-team):
+          briefs/drafts/review under 10-卡片盒/公众号/; intel under 01-收件箱/公众号线索/;
+          layout under 90-附件/公众号/layout/ (desktop tools only); published under 05-归档/公众号/;
+          analytics under 04-资源/公众号/analytics/; voice seed at 00-系统/公众号/voice.md.
           Never set sandbox_permissions or ask for sandbox escalation: it is always rejected.
           {{shellTool}}
     - id: dsh-tools
