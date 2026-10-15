@@ -515,16 +515,20 @@ async function partB(tmp) {
       // ---- Bug C / AC1: model retries a denied write with sandbox escalation ----
       answer = 'allow'; // even if a modal appeared, the user would click Allow
       const nB = approvals.length;
+      // Out-of-vault write probe: an escalated write to os.tmpdir() must not land either.
+      const tmpProbe = path.join(os.tmpdir(), `kvd-esc-probe-${process.pid}-${Date.now()}.txt`);
       scripted.queue.push(
         { tool: SH, input: { command: 'echo esc > esc.txt', description: 'write' } },
         { tool: SH, input: { command: 'echo esc > esc.txt', description: 'write', sandbox_permissions: 'workspace-write', justification: 'need to write the note' } },
         { tool: SH, input: { command: 'echo esc > esc2.txt', description: 'write', sandbox_permissions: 'danger-full-access', justification: 'really' } },
+        { tool: SH, input: { command: `echo esc > "${tmpProbe}"`, description: 'write tmp', sandbox_permissions: 'danger-full-access', justification: 'tmp' } },
         { text: '无法写入。' },
       );
       const runEsc = await host.run({ prompt: '在 vault 里写一个 esc.txt', timeoutMs: 30000 });
       ok(approvals.length - nB === 1 && !approvals.slice(nB).some((a) => a.arguments && a.arguments.sandbox_permissions), 'AC1 [approve]: escalation requests never show an approval modal');
       ok(!fs.existsSync(path.join(vault, 'esc.txt')) && !fs.existsSync(path.join(vault, 'esc2.txt')), 'AC1 [approve]: no direct write happened (esc.txt / esc2.txt absent)');
-      ok(runEsc.toolCalls.length === 3 && runEsc.toolCalls[1].isError && runEsc.toolCalls[2].isError, 'AC1 [approve]: escalation calls come back as errors to the model');
+      ok(runEsc.toolCalls.length === 4 && runEsc.toolCalls[1].isError && runEsc.toolCalls[2].isError && runEsc.toolCalls[3].isError, 'AC1 [approve]: escalation calls come back as errors to the model');
+      ok(!fs.existsSync(tmpProbe), 'AC1 [approve]: escalated write to os.tmpdir() did not land');
       const escRec = log.read().filter((x) => x.event === 'escalation-rejected' && x.policy === 'approve');
       ok(escRec.length >= 2 && escRec.some((x) => x.requestedMode === 'workspace-write') && escRec.some((x) => x.requestedMode === 'danger-full-access'), 'AC1 [approve]: tool log records escalation-rejected events');
 
