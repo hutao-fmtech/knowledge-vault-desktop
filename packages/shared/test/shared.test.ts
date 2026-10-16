@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { WECHAT_OA, WECHAT_OA_REQUIRED_RELS, isWechatOaPipelineRel } from '../src/wechat-oa.js';
 
 test('models: default model is a listed deepseek-official model', async () => {
   const m = await import('../src/models.js');
@@ -25,4 +26,14 @@ test('configDir: lives under HOME (outside any vault) and is created', async () 
   } finally {
     Object.assign(process.env, prev);
   }
+});
+
+test('wechat OA paths are vault-relative and cover §2 roles', () => {
+  assert.ok(WECHAT_OA.briefs.startsWith('10-卡片盒/公众号/'));
+  assert.ok(WECHAT_OA.drafts.startsWith('10-卡片盒/公众号/'));
+  assert.equal(WECHAT_OA.analytics, '04-资源/公众号/analytics');
+  assert.ok(WECHAT_OA_REQUIRED_RELS.includes(WECHAT_OA.voice));
+  assert.equal(isWechatOaPipelineRel('10-卡片盒/公众号/briefs/x.md'), true);
+  assert.equal(isWechatOaPipelineRel('01-收件箱/待处理/x.md'), false);
+  assert.ok(!JSON.stringify(WECHAT_OA).includes('content-team'));
 });

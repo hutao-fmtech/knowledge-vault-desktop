@@ -44,6 +44,7 @@ interface ApiResult {
   vaultPath?: string;
   tree?: UiTreeNode;
   notes?: string[];
+  content?: string;
   answer?: string;
   proposals?: UiProposal[];
   needPrivacy?: boolean;
@@ -70,6 +71,8 @@ interface VaultApi {
   agentSaveKey(k: string): Promise<ApiResult>;
   agentClearKey(): Promise<ApiResult>;
   agentListInbox(): Promise<ApiResult>;
+  agentListWechatOa(): Promise<ApiResult>;
+  agentOpenNote(n: string): Promise<ApiResult>;
   agentAsk(q: string): Promise<ApiResult>;
   agentSort(n: string): Promise<ApiResult>;
   agentCard(n: string): Promise<ApiResult>;

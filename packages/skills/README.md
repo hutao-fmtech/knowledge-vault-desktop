@@ -30,3 +30,8 @@ Every bare import in `src/` must be declared above; relative imports must stay i
 ```sh
 pnpm --filter @kvd/skills test   # node:test, files under test/
 ```
+
+## WeChat OA (W1)
+
+Default-mode sort/card refuse notes under the 公众号 pipeline (`@kvd/shared/wechat-oa`). Advanced persona cites vault-relative OA paths only — no dual-write to `/workspace/content-team`. Writing commands (Brief → draft → layout) are W2.
+

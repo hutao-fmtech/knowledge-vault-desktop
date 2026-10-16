@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld('vaultApi', {
   agentSaveKey: (k: unknown) => ipcRenderer.invoke('agent-save-key', k),
   agentClearKey: () => ipcRenderer.invoke('agent-clear-key'),
   agentListInbox: () => ipcRenderer.invoke('agent-list-inbox'),
+  agentListWechatOa: () => ipcRenderer.invoke('agent-list-wechat-oa'),
+  agentOpenNote: (n: unknown) => ipcRenderer.invoke('agent-open-note', n),
   agentAsk: (q: unknown) => ipcRenderer.invoke('agent-ask', q),
   agentSort: (n: unknown) => ipcRenderer.invoke('agent-sort', n),
   agentCard: (n: unknown) => ipcRenderer.invoke('agent-card', n),

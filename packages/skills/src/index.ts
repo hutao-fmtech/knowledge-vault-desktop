@@ -9,6 +9,7 @@ import type {} from '@deepseek-ai/dsh-credentials';
 import type { ContentBlock } from '@deepseek-ai/dsh-llm';
 import z from '@deepseek-ai/schemastery';
 import { DEFAULT_MODEL } from '@kvd/shared/models';
+import { isWechatOaPipelineRel } from '@kvd/shared/wechat-oa';
 import { proposeCreate, proposeMove } from '@kvd/proposals';
 import type { Proposal, ProposeResult } from '@kvd/proposals';
 import type { PathResult } from '@kvd/vault';
@@ -182,6 +183,14 @@ export async function runSortInbox(
   if (!fs.existsSync(resolved.abs)) {
     return { ok: false, error: `笔记不存在：${noteRel}`, viaSkills: true, skill: 'sortInbox' };
   }
+  if (isWechatOaPipelineRel(resolved.rel)) {
+    return {
+      ok: false,
+      error: `公众号流水线笔记不走收件箱归类：${resolved.rel}`,
+      viaSkills: true,
+      skill: 'sortInbox',
+    };
+  }
   const text = fs.readFileSync(resolved.abs, 'utf8');
   let destDir = pickParaDest(text);
   let reason = '基于关键词启发式';
@@ -249,6 +258,14 @@ export async function runMakeCard(
   if (!resolved.ok) return { ...resolved, viaSkills: true, skill: 'makeCard' };
   if (!fs.existsSync(resolved.abs)) {
     return { ok: false, error: `笔记不存在：${noteRel}`, viaSkills: true, skill: 'makeCard' };
+  }
+  if (isWechatOaPipelineRel(resolved.rel)) {
+    return {
+      ok: false,
+      error: `公众号流水线笔记不走生成卡片：${resolved.rel}`,
+      viaSkills: true,
+      skill: 'makeCard',
+    };
   }
   const text = fs.readFileSync(resolved.abs, 'utf8');
   const title =

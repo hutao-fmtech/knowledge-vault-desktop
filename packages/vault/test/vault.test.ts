@@ -18,11 +18,13 @@ test('resolveVaultPath keeps paths inside the vault', () => {
   }
 });
 
-test('never touches .obsidian/ or 00-系统/', () => {
-  assert.deepEqual(FORBIDDEN_PREFIXES, ['00-系统', '.obsidian']);
+test('never touches .obsidian/ or 00-系统/ or 90-附件/', () => {
+  assert.deepEqual(FORBIDDEN_PREFIXES, ['00-系统', '90-附件', '.obsidian']);
   assert.equal(isReadableRel('.obsidian/x'), false);
   assert.equal(isReadableRel('00-系统/x'), false);
+  assert.equal(isReadableRel('90-附件/x'), false);
   assert.equal(isReadableRel('03-领域/x.md'), true);
+  assert.equal(resolveVaultPath(vault, '90-附件/公众号/layout/x.html').ok, false);
 });
 
 test('sanitizeVaultName strips path separators', () => {

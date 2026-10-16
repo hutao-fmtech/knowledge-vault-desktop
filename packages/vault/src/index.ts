@@ -13,13 +13,13 @@ import z from '@deepseek-ai/schemastery';
 
 // ---- pure path helpers (folded from src/agent/paths.js) ----
 /** Top-level path segments that must never be written (or resolved for write). */
-export const FORBIDDEN_PREFIXES: readonly string[] = ['00-系统', '.obsidian'];
+export const FORBIDDEN_PREFIXES: readonly string[] = ['00-系统', '90-附件', '.obsidian'];
 
 export type PathResult = { ok: true; abs: string; rel: string } | { ok: false; error: string };
 
 /**
  * Resolve a vault-relative path and ensure it stays inside the vault.
- * Rejects absolute paths, `..`, symlinks that escape, `.obsidian/`, and `00-系统/`.
+ * Rejects absolute paths, `..`, symlinks that escape, `.obsidian/`, `00-系统/`, and `90-附件/`.
  * Always runs realpath on the vault root and on every existing path component.
  * @returns {{ ok: true, abs: string, rel: string } | { ok: false, error: string }}
  */
@@ -212,7 +212,7 @@ export class VaultService extends Service {
     return assertInsideVault(this._root, absPath);
   }
 
-  /** Forbidden write prefixes (00-系统, .obsidian). */
+  /** Forbidden write prefixes (00-系统, 90-附件, .obsidian). */
   get forbiddenPrefixes(): string[] {
     return FORBIDDEN_PREFIXES.slice();
   }

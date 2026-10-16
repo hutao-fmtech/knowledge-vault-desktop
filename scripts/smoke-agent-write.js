@@ -46,6 +46,52 @@ function assert(cond, msg) {
   assert(created.ok, created.error || 'createVault failed');
   const vault = created.vaultPath;
 
+  // W1 §4: OA dirs present; fingerprint for ask/sort non-damage
+  const oaRequired = [
+    '00-系统/公众号/voice.md',
+    '01-收件箱/公众号线索',
+    '10-卡片盒/公众号/briefs',
+    '10-卡片盒/公众号/drafts',
+    '10-卡片盒/公众号/review',
+    '90-附件/公众号/layout',
+    '05-归档/公众号',
+    '04-资源/公众号/analytics',
+  ];
+  for (const rel of oaRequired) {
+    assert(fs.existsSync(path.join(vault, ...rel.split('/'))), 'OA missing ' + rel);
+  }
+  function oaFingerprint() {
+    const roots = [
+      '00-系统/公众号',
+      '01-收件箱/公众号线索',
+      '10-卡片盒/公众号',
+      '90-附件/公众号',
+      '05-归档/公众号',
+      '04-资源/公众号',
+    ];
+    const lines = [];
+    function walk(rel) {
+      const abs = path.join(vault, ...rel.split('/'));
+      if (!fs.existsSync(abs)) return;
+      const st = fs.statSync(abs);
+      if (st.isDirectory()) {
+        for (const name of fs.readdirSync(abs).sort()) walk(rel + '/' + name);
+      } else {
+        lines.push(rel + ':' + st.size);
+      }
+    }
+    for (const r of roots) walk(r);
+    return lines.join('|');
+  }
+  // Seed a brief so sidebar listWechatOa has something
+  const briefRel = '10-卡片盒/公众号/briefs/smoke-brief.md';
+  fs.writeFileSync(path.join(vault, ...briefRel.split('/')), '# Smoke Brief\n\n选题测试\n', 'utf8');
+  const { listWechatOaNotes, listInboxNotes } = require('../packages/search/lib/index.js');
+  const oaNotes = listWechatOaNotes(vault);
+  assert(oaNotes.includes(briefRel), 'listWechatOaNotes includes brief');
+  assert(!listInboxNotes(vault).some((n) => n.startsWith('01-收件箱/公众号线索/')), 'inbox excludes 公众号线索');
+  const oaBefore = oaFingerprint();
+
   const inboxNote = path.join(vault, '01-收件箱', '待处理', 'smoke-note.md');
   fs.mkdirSync(path.dirname(inboxNote), { recursive: true });
   fs.writeFileSync(inboxNote, '# Smoke Note\n\n这是一条待归类的项目想法。\n', 'utf8');
@@ -92,6 +138,7 @@ function assert(cond, msg) {
     assert(!r.ok, `should reject ${bad}`);
   }
   assert(!proposeCreate(vault, '00-系统/hack.md', 'x', 'bad').ok, 'reject 00-系统');
+  assert(!proposeCreate(vault, '90-附件/公众号/layout/x.html', 'x', 'bad').ok, 'reject 90-附件');
   assert(
     !proposeMove(vault, '02-项目/个人项目/smoke-note.md', '.obsidian/x.md', 'bad').ok,
     'reject .obsidian'
@@ -128,7 +175,15 @@ function assert(cond, msg) {
   assert(askRes.ok && askRes.citations.length >= 0, 'ask ok');
   assert(askRes.viaSkills && askRes.skill === 'ask', 'ask via skills-logic');
 
-  
+  // sort must refuse 公众号 pipeline notes; OA tree fingerprint unchanged after ask/sort
+  const sortOa = await engine.sortInbox({ vaultRoot: vault, noteRel: briefRel });
+  assert(!sortOa.ok, 'sort must refuse OA brief');
+  assert(/公众号/.test(String(sortOa.error || '')), 'sort OA error mentions 公众号');
+  assert(oaFingerprint() === oaBefore, 'ask/sort must not damage 公众号 tree');
+  assert(fs.existsSync(path.join(vault, ...briefRel.split('/'))), 'brief still on disk');
+  assert(fs.existsSync(path.join(vault, '10-卡片盒', '公众号', 'drafts')), 'drafts dir intact');
+  assert(fs.existsSync(path.join(vault, '00-系统', '公众号', 'voice.md')), 'voice intact after ask/sort');
+
   // dsh-llm in-process mount via composition root (no network)
   const { smokeMount } = await import('../apps/desktop/lib/runtime/boot.js');
   const mount = await smokeMount();

@@ -3,7 +3,7 @@
  * Excludes `00-系统/` and `90-附件/` (and `.obsidian`). File reads go through
  * `vault.resolveAgainst()` so path guards / realpath apply (depends on kvd-vault).
  *
- * Pure helpers (searchVault / makeSnippet / tokenize / listInboxNotes) are exported
+ * Pure helpers (searchVault / makeSnippet / tokenize / listInboxNotes / listWechatOaNotes) are exported
  * from this module; the service is the Cordis-facing API (`ctx.vaultSearch`).
  */
 import fs from 'node:fs';
@@ -159,6 +159,19 @@ export function searchVault(
   return { ok: true, hits: scored.slice(0, limit).map(({ path: p, snippet }) => ({ path: p, snippet })) };
 }
 
+/** Inbox subdir reserved for WeChat OA intel — not listed in generic inbox. */
+const WECHAT_INTEL_DIR = '公众号线索';
+
+/** Briefs + drafts under the OA zettel subtree (sidebar list/open). */
+const WECHAT_SIDEBAR_DIRS: readonly string[] = [
+  '10-卡片盒/公众号/briefs',
+  '10-卡片盒/公众号/drafts',
+];
+
+function isMdNote(name: string): boolean {
+  return /\.md$/i.test(name) && name !== 'README.md' && !name.endsWith('-README.md');
+}
+
 export function listInboxNotes(vaultRoot: string): string[] {
   const inbox = path.join(vaultRoot, '01-收件箱');
   const out: string[] = [];
@@ -166,18 +179,38 @@ export function listInboxNotes(vaultRoot: string): string[] {
   function walk(dir: string): void {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
       const abs = path.join(dir, e.name);
-      if (e.isDirectory()) walk(abs);
-      else if (
-        e.isFile() &&
-        /\.md$/i.test(e.name) &&
-        e.name !== 'README.md' &&
-        !e.name.endsWith('-README.md')
-      ) {
+      if (e.isDirectory()) {
+        // Keep 公众号线索 out of generic inbox sort/card (W1: do not damage OA tree).
+        if (e.name === WECHAT_INTEL_DIR && path.dirname(abs) === inbox) continue;
+        walk(abs);
+      } else if (e.isFile() && isMdNote(e.name)) {
         out.push(path.relative(vaultRoot, abs).split(path.sep).join('/'));
       }
     }
   }
   walk(inbox);
+  return out.sort();
+}
+
+/**
+ * List markdown notes under 公众号 briefs/ and drafts/ (excludes README).
+ */
+export function listWechatOaNotes(vaultRoot: string): string[] {
+  const out: string[] = [];
+  for (const relDir of WECHAT_SIDEBAR_DIRS) {
+    const dir = path.join(vaultRoot, ...relDir.split('/'));
+    if (!fs.existsSync(dir)) continue;
+    function walk(d: string): void {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const abs = path.join(d, e.name);
+        if (e.isDirectory()) walk(abs);
+        else if (e.isFile() && isMdNote(e.name)) {
+          out.push(path.relative(vaultRoot, abs).split(path.sep).join('/'));
+        }
+      }
+    }
+    walk(dir);
+  }
   return out.sort();
 }
 
@@ -216,6 +249,37 @@ export class VaultSearchService extends Service {
     const root = this.ctx.vault.getRoot();
     if (!root) return { ok: false, error: '未打开 vault' };
     return { ok: true, notes: listInboxNotes(root) };
+  }
+
+  /**
+   * List 公众号 briefs/drafts note paths for the Agent sidebar.
+   */
+  listWechatOa(): { ok: true; notes: string[] } | { ok: false; error: string } {
+    const root = this.ctx.vault.getRoot();
+    if (!root) return { ok: false, error: '未打开 vault' };
+    return { ok: true, notes: listWechatOaNotes(root) };
+  }
+
+  /**
+   * Read a vault-relative note for sidebar open (respects readable-path policy).
+   */
+  readNote(relPath: string): { ok: true; path: string; content: string } | { ok: false; error: string } {
+    const root = this.ctx.vault.getRoot();
+    if (!root) return { ok: false, error: '未打开 vault' };
+    const resolved = this.ctx.vault.resolveAgainst(root, relPath);
+    if (!resolved.ok) return resolved;
+    if (!isReadableRel(resolved.rel)) {
+      return { ok: false, error: `不可读取：${resolved.rel}` };
+    }
+    if (!fs.existsSync(resolved.abs) || !fs.statSync(resolved.abs).isFile()) {
+      return { ok: false, error: `笔记不存在：${resolved.rel}` };
+    }
+    try {
+      const content = fs.readFileSync(resolved.abs, 'utf8');
+      return { ok: true, path: resolved.rel, content };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
   }
 
   /** Expose tokenizer for smoke / debugging. */

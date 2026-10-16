@@ -29,6 +29,7 @@ const els = {
   agentAnswer: $('agent-answer'),
   proposalList: $('proposal-list'),
   selectInbox: $<HTMLSelectElement>('select-inbox'),
+  selectWechatOa: $<HTMLSelectElement>('select-wechat-oa'),
   inputAsk: $<HTMLInputElement>('input-ask'),
   inputKey: $<HTMLInputElement>('input-api-key'),
 };
@@ -110,6 +111,7 @@ function renderProposals() {
       renderProposals();
       els.agentAnswer.textContent = `已落盘：${p.summary || p.kind}`;
       await refreshInbox();
+      await refreshWechatOa();
     });
     const discardBtn = document.createElement('button');
     discardBtn.className = 'secondary';
@@ -153,6 +155,25 @@ async function refreshInbox() {
   }
 }
 
+async function refreshWechatOa() {
+  const res = await window.vaultApi.agentListWechatOa();
+  els.selectWechatOa.innerHTML = '';
+  const notes = res.notes ?? [];
+  if (!res.ok || !notes.length) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = res.ok ? '（暂无 Brief / 成稿）' : (res.error ?? '');
+    els.selectWechatOa.appendChild(opt);
+    return;
+  }
+  for (const n of notes) {
+    const opt = document.createElement('option');
+    opt.value = n;
+    opt.textContent = n;
+    els.selectWechatOa.appendChild(opt);
+  }
+}
+
 async function openAgent(vaultPath: string): Promise<void> {
   if (vaultPath) await window.vaultApi.agentSetVault(vaultPath);
   els.sidebar.classList.remove('hidden');
@@ -161,6 +182,7 @@ async function openAgent(vaultPath: string): Promise<void> {
   renderProposals();
   await refreshAgentChrome();
   await refreshInbox();
+  await refreshWechatOa();
 }
 
 function closeAgent() {
@@ -293,6 +315,23 @@ async function init() {
     const res = await window.vaultApi.agentCard(note);
     els.agentAnswer.textContent = (res.ok ? res.answer : res.error) ?? '';
     if (res.ok) mergeProposals(res);
+  });
+
+  $('btn-refresh-wechat-oa').addEventListener('click', async () => {
+    await refreshWechatOa();
+  });
+  $('btn-open-wechat-oa').addEventListener('click', async () => {
+    const note = els.selectWechatOa.value;
+    if (!note) return;
+    els.agentAnswer.textContent = '打开中…';
+    const res = await window.vaultApi.agentOpenNote(note);
+    if (!res.ok) {
+      els.agentAnswer.textContent = res.error ?? '';
+      return;
+    }
+    const body = res.content ?? '';
+    const clipped = body.length > 4000 ? body.slice(0, 4000) + '\n…' : body;
+    els.agentAnswer.textContent = `📄 ${res.path || note}\n\n${clipped}`;
   });
 
   renderProposals();
