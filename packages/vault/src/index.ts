@@ -219,3 +219,68 @@ export class VaultService extends Service {
 }
 
 export default VaultService;
+
+// ---- WeChat OA layout write (desktop local tool; not for model propose) ----
+/** Must stay in sync with `@kvd/shared/wechat-oa` WECHAT_OA.layout. */
+export const WECHAT_LAYOUT_PREFIX = '90-附件/公众号/layout';
+
+/**
+ * Resolve a path for writing WeChat layout HTML under `90-附件/公众号/layout/` only.
+ * Unlike resolveVaultPath, this allows that attachment subtree (desktop local tool).
+ * Still rejects absolute paths, `..`, and anything outside the layout prefix.
+ */
+export function resolveLayoutWritePath(vaultRoot: unknown, relPath: unknown): PathResult {
+  if (relPath == null || typeof relPath !== 'string' || !relPath.trim()) {
+    return { ok: false, error: '路径为空' };
+  }
+  if (vaultRoot == null || typeof vaultRoot !== 'string' || !String(vaultRoot).trim()) {
+    return { ok: false, error: '未打开 vault' };
+  }
+  const raw = relPath.replace(/\\/g, '/').trim().replace(/^\/+/, '');
+  if (path.isAbsolute(raw) || /^[A-Za-z]:/.test(raw)) {
+    return { ok: false, error: '禁止绝对路径' };
+  }
+  if (raw.split('/').some((p) => p === '..')) {
+    return { ok: false, error: '禁止 .. 穿越' };
+  }
+  if (raw !== WECHAT_LAYOUT_PREFIX && !raw.startsWith(WECHAT_LAYOUT_PREFIX + '/')) {
+    return { ok: false, error: `布局写入仅允许 ${WECHAT_LAYOUT_PREFIX}/` };
+  }
+  const root = path.resolve(vaultRoot);
+  const abs = path.resolve(root, raw);
+  const relToRoot = path.relative(root, abs);
+  if (relToRoot.startsWith('..') || path.isAbsolute(relToRoot)) {
+    return { ok: false, error: '路径超出 vault 根目录' };
+  }
+  const realGuard = assertInsideVault(root, abs);
+  if (!realGuard.ok) return realGuard;
+  return { ok: true, abs, rel: relToRoot.split(path.sep).join('/') };
+}
+
+export type LayoutWriteResult =
+  | { ok: true; path: string; abs: string }
+  | { ok: false; error: string };
+
+/**
+ * Desktop local tool: write layout HTML into `90-附件/公众号/layout/…`.
+ * Does not go through proposals; models must not call this via proposeCreate.
+ */
+export function writeWechatLayoutHtml(
+  vaultRoot: string,
+  relPath: unknown,
+  html: unknown,
+): LayoutWriteResult {
+  const resolved = resolveLayoutWritePath(vaultRoot, relPath);
+  if (!resolved.ok) return resolved;
+  const body = html == null ? '' : String(html);
+  try {
+    const dir = path.dirname(resolved.abs);
+    fs.mkdirSync(dir, { recursive: true });
+    const tmp = path.join(dir, `.${path.basename(resolved.abs)}.${process.pid}.tmp`);
+    fs.writeFileSync(tmp, body, 'utf8');
+    fs.renameSync(tmp, resolved.abs);
+    return { ok: true, path: resolved.rel, abs: resolved.abs };
+  } catch (err) {
+    return { ok: false, error: `布局写入失败：${(err as Error).message}` };
+  }
+}

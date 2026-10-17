@@ -127,3 +127,19 @@ export function isSortPrompt(systemText: string): boolean {
   return /PARA/.test(systemText) || /02-项目/.test(systemText);
 }
 
+
+export {
+  PENDING_MARKER,
+  WECHAT_ARTICLE_SYSTEM,
+  WECHAT_TITLES_SYSTEM,
+  WECHAT_LAYOUT_SYSTEM,
+  WECHAT_PIPELINE_SYSTEM,
+  hasPendingMarker,
+  extractNoteTitle,
+  mockDraftFromBrief,
+  mockTitlesFromDraft,
+  renderWechatLayoutHtml,
+  layoutRelForSlug,
+  draftRelForSlug,
+  titlesRelForSlug,
+} from './wechat.js';

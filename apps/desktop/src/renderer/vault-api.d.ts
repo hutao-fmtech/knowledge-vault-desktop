@@ -46,6 +46,7 @@ interface ApiResult {
   notes?: string[];
   content?: string;
   answer?: string;
+  layoutPath?: string;
   proposals?: UiProposal[];
   needPrivacy?: boolean;
   needRiskAck?: string;
@@ -76,6 +77,9 @@ interface VaultApi {
   agentAsk(q: string): Promise<ApiResult>;
   agentSort(n: string): Promise<ApiResult>;
   agentCard(n: string): Promise<ApiResult>;
+  agentWechatDraft(n: string): Promise<ApiResult>;
+  agentWechatTitles(n: string): Promise<ApiResult>;
+  agentWechatLayout(n: string): Promise<ApiResult>;
   agentApply(id: string): Promise<ApiResult>;
   agentDiscard(id: string): Promise<ApiResult>;
   advancedStatus(): Promise<UiAdvancedState & ApiResult>;

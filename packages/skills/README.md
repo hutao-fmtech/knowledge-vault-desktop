@@ -31,7 +31,17 @@ Every bare import in `src/` must be declared above; relative imports must stay i
 pnpm --filter @kvd/skills test   # node:test, files under test/
 ```
 
-## WeChat OA (W1)
+## WeChat OA (W1 + W2)
 
-Default-mode sort/card refuse notes under the 公众号 pipeline (`@kvd/shared/wechat-oa`). Advanced persona cites vault-relative OA paths only — no dual-write to `/workspace/content-team`. Writing commands (Brief → draft → layout) are W2.
+Default-mode sort/card refuse notes under the 公众号 pipeline (`@kvd/shared/wechat-oa`). Advanced persona cites vault-relative OA paths only — no dual-write to `/workspace/content-team`.
+
+**W2 writing commands** (Cordis `kvdSkills`):
+
+| Method | Input | Output |
+| --- | --- | --- |
+| `wechatDraft` | Brief under `briefs/` | proposal → `drafts/`（无 `【待补】`） |
+| `wechatTitles` | draft under `drafts/` | proposal → `review/*-titles.md` |
+| `wechatLayout` | draft under `drafts/` | **local tool** writes `90-附件/公众号/layout/{slug}/index.html`（不经 Apply） |
+
+Retargeted skill prompts live under `skills/wechat/` (article / titles / layout / pipeline).
 
