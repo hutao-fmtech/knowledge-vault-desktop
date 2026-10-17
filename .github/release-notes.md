@@ -1,3 +1,25 @@
+## Knowledge Vault v0.3.0（预发布 / pre-release）
+
+### 变更
+- **W1 公众号 PARA 子树落库**（#24）：新建 vault 时写入完整公众号目录（voice / 线索 / briefs·drafts·review / layout / 归档 / analytics）。
+- **侧栏 Briefs / 成稿**：Agent 侧栏可列出并打开 `10-卡片盒/公众号/` 下 Briefs 与成稿。
+- **Path guards**：模型不可直接写入 `00-系统/` 或 `90-附件/`（layout 仍走桌面工具）。
+- **Skills 改指 vault 路径**：公众号相关 skills / persona 仅使用 vault 相对路径，不再 dual-write `/workspace/content-team`；默认档 sort/card 拒绝对 OA 流水线笔记动手。
+
+### 待真机验证 / 已知限制
+- Mac / Win 真机高级档检查仍待验证（与 v0.2.4 相同）。
+- #20（Windows）仍为已知限制。
+
+### English (brief)
+- W1 WeChat OA PARA subtree on vault create (#24).
+- Sidebar lists/opens Briefs & 成稿 under `10-卡片盒/公众号/`.
+- Path guards block model direct-write to `00-系统/` and `90-附件/`.
+- Skills use vault-relative OA paths only (no content-team dual-write).
+- Pending: Mac/Win real-machine advanced checks; #20 remains a known Windows limit.
+
+CI: version 0.3.0; tag/GitHub Release deferred until after merge (涛).
+
+
 ## Knowledge Vault v0.2.4（预发布 / pre-release）
 
 ### 变更
