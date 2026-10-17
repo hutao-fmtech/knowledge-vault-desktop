@@ -10,7 +10,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm';
 import z from '@deepseek-ai/schemastery';
 import { DEFAULT_MODEL } from '@kvd/shared/models';
 import { isWechatOaPipelineRel } from '@kvd/shared/wechat-oa';
-import { proposeCreate, proposeMove } from '@kvd/proposals';
+import { proposeCreate, proposeMove, proposeEdit } from '@kvd/proposals';
 import type { Proposal, ProposeResult } from '@kvd/proposals';
 import type { PathResult } from '@kvd/vault';
 import type { SearchHit } from '@kvd/search';
@@ -19,12 +19,18 @@ import {
   runWechatDraft,
   runWechatTitles,
   runWechatLayout,
+  runWechatCopyHtml,
+  runWechatPublish,
+  runWechatPreview,
 } from './wechat.js';
 import type { WechatSkillResult } from './wechat.js';
 export {
   runWechatDraft,
   runWechatTitles,
   runWechatLayout,
+  runWechatCopyHtml,
+  runWechatPublish,
+  runWechatPreview,
 } from './wechat.js';
 export type { WechatSkillResult, WechatSkillName, WechatSkillDeps } from './wechat.js';
 
@@ -58,6 +64,7 @@ export interface SkillDeps {
   resolve: (vaultRoot: string, rel: string) => PathResult;
   proposeMove: (vaultRoot: string, from: string, to: string, summary?: string) => ProposeResult;
   proposeCreate: (vaultRoot: string, rel: string, content: string, summary?: string) => ProposeResult;
+  proposeEdit?: (vaultRoot: string, rel: string, content: string, summary?: string) => ProposeResult;
   streamText?: (opts: StreamTextOptions) => Promise<StreamTextResult>;
   /** Desktop local tool: write WeChat layout HTML under 90-附件/公众号/layout/. */
   writeLayout?: (
@@ -80,7 +87,7 @@ export interface SkillResult {
   backend?: string;
   model?: string;
   viaSkills: true;
-  skill: 'ask' | 'sortInbox' | 'makeCard' | 'wechatDraft' | 'wechatTitles' | 'wechatLayout';
+  skill: 'ask' | 'sortInbox' | 'makeCard' | 'wechatDraft' | 'wechatTitles' | 'wechatLayout' | 'wechatCopyHtml' | 'wechatPublish' | 'wechatPreview';
   layoutPath?: string;
   [extra: string]: unknown;
 }
@@ -335,6 +342,12 @@ export function createSkillsEngine(deps: SkillDeps, meta: { id: string; backend:
     wechatTitles: (opts: { vaultRoot: string; draftRel: string }) => runWechatTitles(deps, opts),
     wechatLayout: (opts: { vaultRoot: string; draftRel: string; title?: string }) =>
       runWechatLayout(deps, opts),
+    wechatCopyHtml: (opts: { vaultRoot: string; draftRel?: string; layoutRel?: string }) =>
+      runWechatCopyHtml(deps, opts),
+    wechatPublish: (opts: { vaultRoot: string; draftRel: string; publishedAt?: string }) =>
+      runWechatPublish(deps, opts),
+    wechatPreview: (opts: { vaultRoot: string; draftRel?: string; layoutRel?: string }) =>
+      runWechatPreview(deps, opts),
   };
 }
 
@@ -462,6 +475,9 @@ export class KvdSkillsService extends Service {
       proposeCreate: (vaultRoot, rel, content, summary) => {
         return proposeCreate(vaultRoot, rel, content, summary);
       },
+      proposeEdit: (vaultRoot, rel, content, summary) => {
+        return proposeEdit(vaultRoot, rel, content, summary);
+      },
       streamText: (streamOpts) => self.streamText(streamOpts),
     };
   }
@@ -555,6 +571,69 @@ export class KvdSkillsService extends Service {
       vaultRoot: gate.root,
       draftRel: opts.draftRel,
       title: opts.title,
+    });
+  }
+
+  /**
+   * W3 — resolve layout HTML for clipboard copy (desktop writes clipboard).
+   */
+  async wechatCopyHtml(opts: {
+    draftRel?: string;
+    layoutRel?: string;
+    vaultRoot?: string;
+    forceMock?: boolean;
+    writeLayout?: SkillDeps['writeLayout'];
+  }): Promise<SkillResult | WechatSkillResult> {
+    const gate = this.requireRoot(opts && opts.vaultRoot);
+    if (!gate.ok) return { ...gate, viaSkills: true, skill: 'wechatCopyHtml' };
+    const deps = await this.buildDeps(opts);
+    if (opts.writeLayout) deps.writeLayout = opts.writeLayout;
+    return runWechatCopyHtml(deps, {
+      vaultRoot: gate.root,
+      draftRel: opts.draftRel,
+      layoutRel: opts.layoutRel,
+    });
+  }
+
+  /**
+   * W3 — mark published + archive to 05-归档/公众号/ via proposal → Apply.
+   */
+  async wechatPublish(opts: {
+    draftRel: string;
+    publishedAt?: string;
+    vaultRoot?: string;
+    forceMock?: boolean;
+    writeLayout?: SkillDeps['writeLayout'];
+  }): Promise<SkillResult | WechatSkillResult> {
+    const gate = this.requireRoot(opts && opts.vaultRoot);
+    if (!gate.ok) return { ...gate, viaSkills: true, skill: 'wechatPublish' };
+    const deps = await this.buildDeps(opts);
+    if (opts.writeLayout) deps.writeLayout = opts.writeLayout;
+    return runWechatPublish(deps, {
+      vaultRoot: gate.root,
+      draftRel: opts.draftRel,
+      publishedAt: opts.publishedAt,
+    });
+  }
+
+  /**
+   * W3 — open local layout preview path (desktop shell.openPath).
+   */
+  async wechatPreview(opts: {
+    draftRel?: string;
+    layoutRel?: string;
+    vaultRoot?: string;
+    forceMock?: boolean;
+    writeLayout?: SkillDeps['writeLayout'];
+  }): Promise<SkillResult | WechatSkillResult> {
+    const gate = this.requireRoot(opts && opts.vaultRoot);
+    if (!gate.ok) return { ...gate, viaSkills: true, skill: 'wechatPreview' };
+    const deps = await this.buildDeps(opts);
+    if (opts.writeLayout) deps.writeLayout = opts.writeLayout;
+    return runWechatPreview(deps, {
+      vaultRoot: gate.root,
+      draftRel: opts.draftRel,
+      layoutRel: opts.layoutRel,
     });
   }
 }

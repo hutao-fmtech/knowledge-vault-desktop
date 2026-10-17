@@ -284,3 +284,25 @@ export function writeWechatLayoutHtml(
     return { ok: false, error: `布局写入失败：${(err as Error).message}` };
   }
 }
+
+export type LayoutReadResult =
+  | { ok: true; path: string; abs: string; html: string }
+  | { ok: false; error: string };
+
+/**
+ * Desktop local tool: read layout HTML under `90-附件/公众号/layout/…`.
+ * Uses the same path guard as writeWechatLayoutHtml (not resolveVaultPath).
+ */
+export function readWechatLayoutHtml(vaultRoot: string, relPath: unknown): LayoutReadResult {
+  const resolved = resolveLayoutWritePath(vaultRoot, relPath);
+  if (!resolved.ok) return resolved;
+  try {
+    if (!fs.existsSync(resolved.abs)) {
+      return { ok: false, error: `布局文件不存在：${resolved.rel}` };
+    }
+    const html = fs.readFileSync(resolved.abs, 'utf8');
+    return { ok: true, path: resolved.rel, abs: resolved.abs, html };
+  } catch (err) {
+    return { ok: false, error: `布局读取失败：${(err as Error).message}` };
+  }
+}

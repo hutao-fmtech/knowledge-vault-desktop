@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, safeStorage } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, clipboard } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createVault, sanitizeVaultName, topLevelSkeletonLabels } from '@kvd/vault/create';
 import { writeWechatLayoutHtml } from '@kvd/vault';
+// readWechatLayoutHtml used inside skills wechatCopyHtml/Preview
 import { createAdvancedController } from '@kvd/advanced/controller';
 import type { AdvancedController, AdvancedState, PrefsRecord } from '@kvd/advanced/controller';
 import { classifyIpcOrigin as classifyOrigin, isLocal } from '@kvd/advanced/origin';
@@ -386,12 +387,31 @@ async function runSkill(
   payload: { draftRel: string; title?: string },
 ): Promise<SkillResult>;
 async function runSkill(
-  action: 'ask' | 'sortInbox' | 'makeCard' | 'wechatDraft' | 'wechatTitles' | 'wechatLayout',
+  action: 'wechatCopyHtml' | 'wechatPreview',
+  payload: { draftRel?: string; layoutRel?: string },
+): Promise<SkillResult>;
+async function runSkill(
+  action: 'wechatPublish',
+  payload: { draftRel: string; publishedAt?: string },
+): Promise<SkillResult>;
+async function runSkill(
+  action:
+    | 'ask'
+    | 'sortInbox'
+    | 'makeCard'
+    | 'wechatDraft'
+    | 'wechatTitles'
+    | 'wechatLayout'
+    | 'wechatCopyHtml'
+    | 'wechatPublish'
+    | 'wechatPreview',
   payload:
     | { question: string }
     | { noteRel: string }
     | { briefRel: string }
-    | { draftRel: string; title?: string },
+    | { draftRel: string; title?: string }
+    | { draftRel?: string; layoutRel?: string }
+    | { draftRel: string; publishedAt?: string },
 ): Promise<SkillResult> {
   const ctx = await getRuntimeCtx();
   await syncVaultService(activeVault);
@@ -415,10 +435,19 @@ async function runSkill(
       writeLayout: layoutLocalTool(),
     });
   }
-  return skills.wechatLayout({
-    ...(payload as { draftRel: string; title?: string }),
-    writeLayout: layoutLocalTool(),
-  });
+  if (action === 'wechatLayout') {
+    return skills.wechatLayout({
+      ...(payload as { draftRel: string; title?: string }),
+      writeLayout: layoutLocalTool(),
+    });
+  }
+  if (action === 'wechatCopyHtml') {
+    return skills.wechatCopyHtml(payload as { draftRel?: string; layoutRel?: string });
+  }
+  if (action === 'wechatPublish') {
+    return skills.wechatPublish(payload as { draftRel: string; publishedAt?: string });
+  }
+  return skills.wechatPreview(payload as { draftRel?: string; layoutRel?: string });
 }
 
 function showOpenDialog(opts: Electron.OpenDialogOptions): Promise<Electron.OpenDialogReturnValue> {
@@ -681,6 +710,54 @@ ipcMain.handle('agent-wechat-layout', async (_e, draftRel: unknown) => {
   try {
     // Layout lands via local tool immediately — no proposal stash required.
     return await runSkill('wechatLayout', { draftRel: String(draftRel ?? '') });
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) };
+  }
+});
+
+ipcMain.handle('agent-wechat-copy-html', async (_e, draftRel: unknown) => {
+  if (!activeVault) return { ok: false, error: '未打开 vault' };
+  try {
+    const res = await runSkill('wechatCopyHtml', { draftRel: String(draftRel ?? '') });
+    if (!res.ok) return res;
+    const html = typeof res.html === 'string' ? res.html : '';
+    const text = typeof res.text === 'string' ? res.text : '';
+    if (!html) return { ok: false, error: '布局 HTML 为空' };
+    // Electron clipboard — desktop-local; no network / WeChat login.
+    clipboard.write({ html, text: text || html });
+    return {
+      ...res,
+      answer: (res.answer || '') + ' 已复制到系统剪贴板。',
+      copied: true,
+    };
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) };
+  }
+});
+
+ipcMain.handle('agent-wechat-publish', async (_e, draftRel: unknown) => {
+  if (!activeVault) return { ok: false, error: '未打开 vault' };
+  const prefs = readPrefs();
+  if (!prefs.privacyAccepted && hasApiKey(safeStorage)) {
+    return { ok: false, error: '请先同意隐私说明', needPrivacy: true };
+  }
+  try {
+    return stashProposals(await runSkill('wechatPublish', { draftRel: String(draftRel ?? '') }));
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) };
+  }
+});
+
+ipcMain.handle('agent-wechat-preview', async (_e, draftRel: unknown) => {
+  if (!activeVault) return { ok: false, error: '未打开 vault' };
+  try {
+    const res = await runSkill('wechatPreview', { draftRel: String(draftRel ?? '') });
+    if (!res.ok) return res;
+    const abs = typeof res.layoutAbs === 'string' ? res.layoutAbs : '';
+    if (!abs) return { ok: false, error: '预览路径缺失' };
+    const openErr = await shell.openPath(abs);
+    if (openErr) return { ok: false, error: `无法打开预览：${openErr}` };
+    return { ...res, opened: true };
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
   }

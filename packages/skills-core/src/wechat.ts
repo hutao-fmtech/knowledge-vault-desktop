@@ -314,3 +314,73 @@ export function titlesRelForSlug(slug: string): string {
   const safe = slugify(slug) || 'article';
   return `10-卡片盒/公众号/review/${safe}-titles.md`;
 }
+
+export function publishedRelForSlug(slug: string): string {
+  const safe = slugify(slug) || 'article';
+  return `05-归档/公众号/${safe}.md`;
+}
+
+/** YAML frontmatter mark for a published WeChat OA piece. */
+export const PUBLISHED_STATUS = 'published';
+
+/**
+ * Ensure note has wechat_status / published_at frontmatter (idempotent).
+ * Does not change body beyond the YAML block.
+ */
+export function withPublishedMark(markdown: unknown, publishedAt?: string): string {
+  const md = String(markdown ?? '');
+  const day =
+    publishedAt ||
+    new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' }); // YYYY-MM-DD
+  const markBlock = `---\nwechat_status: ${PUBLISHED_STATUS}\npublished_at: ${day}\n---\n`;
+  if (md.startsWith('---')) {
+    const end = md.indexOf('\n---', 3);
+    if (end !== -1) {
+      const fm = md.slice(0, end + 4);
+      const body = md.slice(end + 4).replace(/^\n/, '');
+      let nextFm = fm;
+      if (/wechat_status\s*:/.test(fm)) {
+        nextFm = nextFm.replace(/wechat_status\s*:\s*\S+/g, `wechat_status: ${PUBLISHED_STATUS}`);
+      } else {
+        nextFm = nextFm.replace(/\n---\s*$/, `\nwechat_status: ${PUBLISHED_STATUS}\n---`);
+      }
+      if (/published_at\s*:/.test(nextFm)) {
+        nextFm = nextFm.replace(/published_at\s*:\s*\S+/g, `published_at: ${day}`);
+      } else {
+        nextFm = nextFm.replace(/\n---\s*$/, `\npublished_at: ${day}\n---`);
+      }
+      return `${nextFm}\n${body}`;
+    }
+  }
+  return markBlock + md;
+}
+
+/**
+ * Extract pasteable article HTML from a layout preview document
+ * (same payload as the in-page 「复制到公众号」 button).
+ */
+export function extractPasteableHtml(layoutHtml: unknown): string {
+  const html = String(layoutHtml ?? '');
+  const re = /<div id="article">\s*([\s\S]*?)\s*<\/div>\s*<\/div>\s*<script/i;
+  const m = re.exec(html);
+  if (m && m[1]) return m[1].trim();
+  return html;
+}
+
+/** Rough plain-text for clipboard text/plain alongside HTML. */
+export function htmlToPlainText(html: unknown): string {
+  return String(html ?? '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<\/h[1-6]>/gi, '\n\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}

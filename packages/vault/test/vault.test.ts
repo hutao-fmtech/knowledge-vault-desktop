@@ -9,6 +9,7 @@ import {
   FORBIDDEN_PREFIXES,
   resolveLayoutWritePath,
   writeWechatLayoutHtml,
+  readWechatLayoutHtml,
   WECHAT_LAYOUT_PREFIX,
 } from '../src/index.js';
 
@@ -57,4 +58,17 @@ test('writeWechatLayoutHtml writes under layout prefix', () => {
     assert.equal(w.path, rel);
     assert.equal(fs.readFileSync(w.abs, 'utf8'), '<html>ok</html>');
   }
+});
+
+test('readWechatLayoutHtml reads under layout prefix only', () => {
+  const rel = '90-附件/公众号/layout/unit-read/index.html';
+  assert.equal(writeWechatLayoutHtml(vault, rel, '<html>read-me</html>').ok, true);
+  const r = readWechatLayoutHtml(vault, rel);
+  assert.equal(r.ok, true);
+  if (r.ok) {
+    assert.equal(r.html, '<html>read-me</html>');
+    assert.equal(r.path, rel);
+  }
+  assert.equal(readWechatLayoutHtml(vault, '10-卡片盒/公众号/drafts/x.md').ok, false);
+  assert.equal(readWechatLayoutHtml(vault, '90-附件/公众号/layout/missing/index.html').ok, false);
 });

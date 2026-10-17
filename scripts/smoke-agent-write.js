@@ -604,6 +604,7 @@ function assert(cond, msg) {
   {
     const { writeWechatLayoutHtml } = await import('../packages/vault/lib/index.js');
     const { hasPendingMarker } = await import('../packages/skills-core/lib/index.js');
+    const { proposeEdit } = await import('../packages/proposals/lib/index.js');
     const w2Brief = '10-卡片盒/公众号/briefs/w2-smoke-brief.md';
     fs.writeFileSync(
       path.join(vault, ...w2Brief.split('/')),
@@ -619,6 +620,7 @@ function assert(cond, msg) {
         resolve: resolveVaultPath,
         proposeMove,
         proposeCreate,
+        proposeEdit,
         writeLayout: (root, rel, html) => {
           const w = writeWechatLayoutHtml(root, rel, html);
           return w.ok ? { ok: true, path: w.path } : w;
@@ -664,6 +666,67 @@ function assert(cond, msg) {
     const oaNotes2 = listWechatOaNotes(vault);
     assert(oaNotes2.includes(w2Brief), 'w2 brief listed');
     assert(oaNotes2.includes(draftRel), 'w2 draft listed');
+
+    // --- W3: copy HTML resolve + publish/archive via proposal → Apply ---
+    const { extractPasteableHtml, withPublishedMark, publishedRelForSlug } = await import(
+      '../packages/skills-core/lib/index.js'
+    );
+    const { readWechatLayoutHtml } = await import('../packages/vault/lib/index.js');
+
+    const copyRes = await w2Engine.wechatCopyHtml({ vaultRoot: vault, draftRel });
+    assert(copyRes.ok && copyRes.skill === 'wechatCopyHtml', 'w3 copy ok');
+    assert(copyRes.html && /<section/.test(copyRes.html), 'w3 copy has pasteable html');
+    assert(copyRes.layoutPath && copyRes.layoutPath.startsWith('90-附件/公众号/layout/'), 'w3 copy layout path');
+    const layoutRead = readWechatLayoutHtml(vault, copyRes.layoutPath);
+    assert(layoutRead.ok, 'w3 layout readable');
+    assert(
+      extractPasteableHtml(layoutRead.html) === copyRes.html ||
+        extractPasteableHtml(layoutRead.html).includes('<section'),
+      'w3 extract aligns with copy payload',
+    );
+    // clipboard APIs are Electron-only — smoke stubs by asserting resolve + html only
+    assert(typeof copyRes.html === 'string' && copyRes.html.length > 40, 'w3 html payload non-empty');
+
+    const pubRes = await w2Engine.wechatPublish({
+      vaultRoot: vault,
+      draftRel,
+      publishedAt: '2026-10-17',
+    });
+    assert(pubRes.ok && pubRes.skill === 'wechatPublish', 'w3 publish ok');
+    assert(pubRes.proposals && pubRes.proposals.length === 2, 'w3 publish edit+move proposals');
+    assert(pubRes.proposals[0].kind === 'edit', 'w3 first proposal is edit mark');
+    assert(pubRes.proposals[1].kind === 'move', 'w3 second proposal is move archive');
+    assert(/wechat_status: published/.test(pubRes.proposals[0].content), 'w3 frontmatter mark');
+    assert(
+      String(pubRes.proposals[1].to).startsWith('05-归档/公众号/'),
+      'w3 archive under 05-归档/公众号',
+    );
+    assert(
+      !fs.existsSync(path.join(vault, ...String(pubRes.proposals[1].to).split('/'))),
+      'w3 archive not on disk before Apply',
+    );
+    assert(applyProposal(vault, pubRes.proposals[0]).ok, 'w3 apply edit mark');
+    assert(applyProposal(vault, pubRes.proposals[1]).ok, 'w3 apply move archive');
+    const archivedRel = pubRes.proposals[1].to;
+    assert(fs.existsSync(path.join(vault, ...archivedRel.split('/'))), 'w3 archived on disk');
+    assert(!fs.existsSync(path.join(vault, ...draftRel.split('/'))), 'w3 draft left drafts/');
+    const archivedBody = fs.readFileSync(path.join(vault, ...archivedRel.split('/')), 'utf8');
+    assert(/wechat_status: published/.test(archivedBody), 'w3 archived has published mark');
+    assert(/published_at: 2026-10-17/.test(archivedBody), 'w3 archived has published_at');
+
+    // path helpers + mark idempotence (no WeChat network)
+    assert(publishedRelForSlug('x').startsWith('05-归档/公众号/'), 'w3 publishedRel helper');
+    assert(/wechat_status: published/.test(withPublishedMark('body', '2026-10-17')), 'w3 withPublishedMark');
+    assert(
+      !proposeCreate(vault, '90-附件/公众号/layout/w3-hack.html', '<p>x</p>', 'bad').ok,
+      'w3 still reject propose into 90-附件',
+    );
+
+    const previewRes = await w2Engine.wechatPreview({
+      vaultRoot: vault,
+      layoutRel: copyRes.layoutPath,
+    });
+    assert(previewRes.ok && previewRes.layoutAbs, 'w3 preview resolves abs path');
   }
 
   console.log('AGENT_SMOKE_OK', `${asserts} asserts`, vault);

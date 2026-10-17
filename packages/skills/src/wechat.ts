@@ -1,7 +1,8 @@
 /**
- * W2 WeChat OA writing flows: Brief → draft → titles → layout HTML.
- * Notes (drafts/titles) go through proposeCreate → Apply.
- * Layout HTML is written only via deps.writeLayout (desktop local tool).
+ * W2/W3 WeChat OA flows: Brief → draft → titles → layout HTML → copy / publish-archive.
+ * Notes (drafts/titles/archive) go through proposal → Apply.
+ * Layout HTML is written/read only via desktop local tools (90-附件).
+ * Copy uses clipboard in the desktop main process (no WeChat login).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -20,8 +21,14 @@ import {
   draftRelForSlug,
   titlesRelForSlug,
   layoutRelForSlug,
+  publishedRelForSlug,
+  withPublishedMark,
+  extractPasteableHtml,
+  htmlToPlainText,
   slugify,
 } from '@kvd/skills-core';
+import { readWechatLayoutHtml } from '@kvd/vault';
+import { proposeEdit } from '@kvd/proposals';
 import type { PathResult } from '@kvd/vault';
 import type { SearchHit } from '@kvd/search';
 import type { ProposeResult } from '@kvd/proposals';
@@ -41,10 +48,11 @@ export interface WechatBaseDeps {
   resolve: (vaultRoot: string, rel: string) => PathResult;
   proposeMove: (vaultRoot: string, from: string, to: string, summary?: string) => ProposeResult;
   proposeCreate: (vaultRoot: string, rel: string, content: string, summary?: string) => ProposeResult;
+  proposeEdit?: (vaultRoot: string, rel: string, content: string, summary?: string) => ProposeResult;
   streamText?: (opts: { system: string; user: string; provider?: string; model?: string }) => Promise<StreamTextResult>;
 }
 
-export type WechatSkillName = 'wechatDraft' | 'wechatTitles' | 'wechatLayout';
+export type WechatSkillName = 'wechatDraft' | 'wechatTitles' | 'wechatLayout' | 'wechatCopyHtml' | 'wechatPublish' | 'wechatPreview';
 
 export interface WechatSkillResult {
   ok: boolean;
@@ -59,8 +67,14 @@ export interface WechatSkillResult {
   model?: string;
   viaSkills: true;
   skill: WechatSkillName;
-  /** Layout HTML vault-relative path when written by local tool. */
+  /** Layout HTML vault-relative path when written/read by local tool. */
   layoutPath?: string;
+  /** Absolute path for opening local preview. */
+  layoutAbs?: string;
+  /** Pasteable HTML for clipboard (desktop copies; smoke asserts content). */
+  html?: string;
+  /** Plain-text clipboard companion. */
+  text?: string;
   [extra: string]: unknown;
 }
 
@@ -277,6 +291,150 @@ export async function runWechatLayout(
     viaSkills: true,
     skill: 'wechatLayout',
     layoutPath: written.path,
+    backend: 'local-tool',
+  };
+}
+
+
+function layoutRelFromDraft(
+  deps: WechatBaseDeps,
+  vaultRoot: string,
+  draftRel: string,
+): { ok: true; draftRel: string; layoutRel: string; title: string } | { ok: false; error: string } {
+  const note = readNote(deps, vaultRoot, draftRel);
+  if (!note.ok) return note;
+  if (!underDir(note.rel, WECHAT_OA.drafts)) {
+    return { ok: false, error: `请选择成稿（${WECHAT_OA.drafts}/）：${note.rel}` };
+  }
+  const title = extractNoteTitle(note.text, path.basename(note.rel, '.md'));
+  const layoutRel = layoutRelForSlug(slugify(title) || path.basename(note.rel, '.md'));
+  return { ok: true, draftRel: note.rel, layoutRel, title };
+}
+
+/**
+ * W3 — resolve layout HTML for one-click clipboard copy (desktop writes clipboard).
+ * Smoke/unit tests assert html/path; clipboard is Electron-only.
+ */
+export async function runWechatCopyHtml(
+  deps: WechatSkillDeps,
+  {
+    vaultRoot,
+    draftRel,
+    layoutRel,
+  }: { vaultRoot: string; draftRel?: string; layoutRel?: string },
+): Promise<WechatSkillResult> {
+  let rel = layoutRel ? String(layoutRel).replace(/\\/g, '/') : '';
+  const citations: string[] = [];
+  if (!rel) {
+    if (!draftRel) {
+      return {
+        ok: false,
+        error: '请提供成稿路径或布局路径',
+        viaSkills: true,
+        skill: 'wechatCopyHtml',
+      };
+    }
+    const derived = layoutRelFromDraft(deps, vaultRoot, draftRel);
+    if (!derived.ok) return { ...derived, viaSkills: true, skill: 'wechatCopyHtml' };
+    rel = derived.layoutRel;
+    citations.push(derived.draftRel);
+  }
+  const read = readWechatLayoutHtml(vaultRoot, rel);
+  if (!read.ok) return { ...read, viaSkills: true, skill: 'wechatCopyHtml' };
+  const paste = extractPasteableHtml(read.html);
+  const text = htmlToPlainText(paste);
+  return {
+    ok: true,
+    answer: `已准备排版 HTML（\`${read.path}\`），可粘贴到微信公众号编辑器。不含自动发布、不登录微信。`,
+    citations,
+    proposals: [],
+    viaSkills: true,
+    skill: 'wechatCopyHtml',
+    layoutPath: read.path,
+    layoutAbs: read.abs,
+    html: paste,
+    text,
+    backend: 'local-tool',
+  };
+}
+
+/**
+ * W3 — mark published (frontmatter) + archive to 05-归档/公众号/ via proposal → Apply.
+ * Emits edit then move; Apply both in order. No silent fs move.
+ */
+export async function runWechatPublish(
+  deps: WechatSkillDeps,
+  { vaultRoot, draftRel, publishedAt }: { vaultRoot: string; draftRel: string; publishedAt?: string },
+): Promise<WechatSkillResult> {
+  const note = readNote(deps, vaultRoot, draftRel);
+  if (!note.ok) return { ...note, viaSkills: true, skill: 'wechatPublish' };
+  if (!underDir(note.rel, WECHAT_OA.drafts)) {
+    return {
+      ok: false,
+      error: `请选择成稿（${WECHAT_OA.drafts}/）：${note.rel}`,
+      viaSkills: true,
+      skill: 'wechatPublish',
+    };
+  }
+
+  const marked = withPublishedMark(note.text, publishedAt);
+  const title = extractNoteTitle(note.text, path.basename(note.rel, '.md'));
+  const destRel = publishedRelForSlug(slugify(title) || path.basename(note.rel, '.md'));
+
+  const editFn = deps.proposeEdit || proposeEdit;
+  const edited = editFn(vaultRoot, note.rel, marked, `标记已发布 ${note.rel}`);
+  if (!edited.ok) return { ...edited, viaSkills: true, skill: 'wechatPublish' };
+
+  const moved = deps.proposeMove(vaultRoot, note.rel, destRel, `归档到 ${WECHAT_OA.published}/`);
+  if (!moved.ok) return { ...moved, viaSkills: true, skill: 'wechatPublish' };
+
+  return {
+    ok: true,
+    answer:
+      `将标记 \`${note.rel}\` 为已发布并归档到 \`${destRel}\`（拟改动：编辑 frontmatter → 移动）。` +
+      `确认 Apply 后才会落盘。不登录微信、不自动群发。`,
+    citations: [note.rel],
+    proposals: [edited.proposal, moved.proposal],
+    viaSkills: true,
+    skill: 'wechatPublish',
+    backend: 'local-tool',
+  };
+}
+
+/**
+ * W3 — optional local preview: resolve layout abs path for shell.openPath.
+ */
+export async function runWechatPreview(
+  deps: WechatSkillDeps,
+  { vaultRoot, draftRel, layoutRel }: { vaultRoot: string; draftRel?: string; layoutRel?: string },
+): Promise<WechatSkillResult> {
+  let rel = layoutRel ? String(layoutRel).replace(/\\/g, '/') : '';
+  const citations: string[] = [];
+  if (!rel) {
+    if (!draftRel) {
+      return {
+        ok: false,
+        error: '请提供成稿路径或布局路径',
+        viaSkills: true,
+        skill: 'wechatPreview',
+      };
+    }
+    const derived = layoutRelFromDraft(deps, vaultRoot, draftRel);
+    if (!derived.ok) return { ...derived, viaSkills: true, skill: 'wechatPreview' };
+    rel = derived.layoutRel;
+    citations.push(derived.draftRel);
+  }
+  const read = readWechatLayoutHtml(vaultRoot, rel);
+  if (!read.ok) return { ...read, viaSkills: true, skill: 'wechatPreview' };
+  return {
+    ok: true,
+    answer: `本地预览：\`${read.path}\`（用系统浏览器打开）。不含自动发布。`,
+    citations,
+    proposals: [],
+    viaSkills: true,
+    skill: 'wechatPreview',
+    layoutPath: read.path,
+    layoutAbs: read.abs,
     backend: 'local-tool',
   };
 }

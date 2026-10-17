@@ -3,7 +3,7 @@
   "version": "0.2.2",
   "private": true,
   "type": "module",
-  "description": "kvd-skills: default-mode ask / sortInbox / makeCard + WeChat OA draft/titles/layout flows.",
+  "description": "kvd-skills: default-mode ask / sortInbox / makeCard + WeChat OA draft/titles/layout/copy/publish flows.",
   "license": "MIT",
   "exports": {
     ".": {

@@ -67,7 +67,7 @@ jobs:
           A=$(grep -oP 'AGENT_SMOKE_OK \K[0-9]+(?= asserts)' smoke.txt)
           B=$(grep -oP 'ADVANCED_SMOKE_OK \K[0-9]+(?= checks)' smoke.txt)
           echo "AGENT_SMOKE_OK=$A ADVANCED_SMOKE_OK=$B"
-          [ "$A" -ge 369 ] && [ "$B" -ge 119 ]
+          [ "$A" -ge 392 ] && [ "$B" -ge 119 ]
 
   smoke-windows:
     # Issue #18: the advanced bash sandbox must really execute on Windows
@@ -114,7 +114,7 @@ jobs:
           A=$(grep -oP 'AGENT_SMOKE_OK \K[0-9]+(?= asserts)' smoke.txt)
           B=$(grep -oP 'ADVANCED_SMOKE_OK \K[0-9]+(?= checks)' smoke.txt)
           echo "AGENT_SMOKE_OK=$A ADVANCED_SMOKE_OK=$B"
-          [ "$A" -ge 369 ] && [ "$B" -ge 119 ]
+          [ "$A" -ge 392 ] && [ "$B" -ge 119 ]
 
   pack-smoke:
     name: pack-smoke (asar + Electron Node + cordis.yml composition)
