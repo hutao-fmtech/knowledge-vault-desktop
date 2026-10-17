@@ -31,3 +31,18 @@ test('wechat mock draft has no pending marker and layout html has copy button', 
   assert.equal(core.layoutRelForSlug('测试标题').startsWith('90-附件/公众号/layout/'), true);
   assert.equal(core.draftRelForSlug('测试标题').startsWith('10-卡片盒/公众号/drafts/'), true);
 });
+
+test('W3 published mark + pasteable html extract', () => {
+  const marked = core.withPublishedMark('# Hello\n\nbody', '2026-10-17');
+  assert.match(marked, /wechat_status: published/);
+  assert.match(marked, /published_at: 2026-10-17/);
+  assert.match(marked, /# Hello/);
+  const again = core.withPublishedMark(marked, '2026-10-18');
+  assert.match(again, /published_at: 2026-10-18/);
+  assert.equal(core.publishedRelForSlug('Hello').startsWith('05-归档/公众号/'), true);
+  const html = core.renderWechatLayoutHtml({ title: 'T', markdown: '# T\n\npara' });
+  const paste = core.extractPasteableHtml(html);
+  assert.match(paste, /<section/);
+  assert.ok(!paste.includes('copyBtn'));
+  assert.match(core.htmlToPlainText(paste), /para/);
+});

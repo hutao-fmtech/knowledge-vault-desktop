@@ -360,6 +360,29 @@ async function init() {
     els.agentAnswer.textContent = (res.ok ? res.answer : res.error) ?? '';
     await refreshWechatOa();
   });
+  $('btn-wechat-copy-html').addEventListener('click', async () => {
+    const note = els.selectWechatOa.value;
+    if (!note) return;
+    els.agentAnswer.textContent = '复制 HTML…';
+    const res = await window.vaultApi.agentWechatCopyHtml(note);
+    els.agentAnswer.textContent = (res.ok ? res.answer : res.error) ?? '';
+  });
+  $('btn-wechat-preview').addEventListener('click', async () => {
+    const note = els.selectWechatOa.value;
+    if (!note) return;
+    els.agentAnswer.textContent = '打开预览…';
+    const res = await window.vaultApi.agentWechatPreview(note);
+    els.agentAnswer.textContent = (res.ok ? res.answer : res.error) ?? '';
+  });
+  $('btn-wechat-publish').addEventListener('click', async () => {
+    const note = els.selectWechatOa.value;
+    if (!note) return;
+    els.agentAnswer.textContent = '标记已发布…';
+    const res = await window.vaultApi.agentWechatPublish(note);
+    els.agentAnswer.textContent = (res.ok ? res.answer : res.error) ?? '';
+    if (res.ok) mergeProposals(res);
+    await refreshWechatOa();
+  });
 
   renderProposals();
   initAdvanced();

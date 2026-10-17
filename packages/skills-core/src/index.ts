@@ -142,4 +142,9 @@ export {
   layoutRelForSlug,
   draftRelForSlug,
   titlesRelForSlug,
+  publishedRelForSlug,
+  PUBLISHED_STATUS,
+  withPublishedMark,
+  extractPasteableHtml,
+  htmlToPlainText,
 } from './wechat.js';
