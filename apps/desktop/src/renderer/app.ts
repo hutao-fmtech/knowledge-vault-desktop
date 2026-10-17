@@ -334,6 +334,33 @@ async function init() {
     els.agentAnswer.textContent = `📄 ${res.path || note}\n\n${clipped}`;
   });
 
+  $('btn-wechat-draft').addEventListener('click', async () => {
+    const note = els.selectWechatOa.value;
+    if (!note) return;
+    els.agentAnswer.textContent = '起草中…';
+    const res = await window.vaultApi.agentWechatDraft(note);
+    els.agentAnswer.textContent = (res.ok ? res.answer : res.error) ?? '';
+    if (res.ok) mergeProposals(res);
+    await refreshWechatOa();
+  });
+  $('btn-wechat-titles').addEventListener('click', async () => {
+    const note = els.selectWechatOa.value;
+    if (!note) return;
+    els.agentAnswer.textContent = '起标题…';
+    const res = await window.vaultApi.agentWechatTitles(note);
+    els.agentAnswer.textContent = (res.ok ? res.answer : res.error) ?? '';
+    if (res.ok) mergeProposals(res);
+    await refreshWechatOa();
+  });
+  $('btn-wechat-layout').addEventListener('click', async () => {
+    const note = els.selectWechatOa.value;
+    if (!note) return;
+    els.agentAnswer.textContent = '排版中…';
+    const res = await window.vaultApi.agentWechatLayout(note);
+    els.agentAnswer.textContent = (res.ok ? res.answer : res.error) ?? '';
+    await refreshWechatOa();
+  });
+
   renderProposals();
   initAdvanced();
 }

@@ -18,3 +18,16 @@ test('prompt detection + canned answers', () => {
   assert.equal(core.mockSortAnswer('项目', core.pickParaDest), '02-项目\n基于关键词启发式');
   assert.equal(core.extractMessagesText([{ content: 'a' }, { content: [{ type: 'text', text: 'b' }] }]), 'a\nb');
 });
+
+test('wechat mock draft has no pending marker and layout html has copy button', () => {
+  const draft = core.mockDraftFromBrief('# Brief 主题\n\n写一篇关于 Agent 流水线的短文。\n');
+  assert.equal(core.hasPendingMarker(draft), false);
+  assert.match(draft, /10-卡片盒\/公众号/);
+  const titles = core.mockTitlesFromDraft(draft);
+  assert.match(titles, /标题候选/);
+  const html = core.renderWechatLayoutHtml({ title: '测试标题', markdown: draft });
+  assert.match(html, /复制到公众号/);
+  assert.match(html, /max-width:677px/);
+  assert.equal(core.layoutRelForSlug('测试标题').startsWith('90-附件/公众号/layout/'), true);
+  assert.equal(core.draftRelForSlug('测试标题').startsWith('10-卡片盒/公众号/drafts/'), true);
+});

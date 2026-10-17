@@ -15,6 +15,18 @@ import type { Proposal, ProposeResult } from '@kvd/proposals';
 import type { PathResult } from '@kvd/vault';
 import type { SearchHit } from '@kvd/search';
 import { SYSTEM, pickParaDest, cardType, slugify, mockAskAnswer } from '@kvd/skills-core';
+import {
+  runWechatDraft,
+  runWechatTitles,
+  runWechatLayout,
+} from './wechat.js';
+import type { WechatSkillResult } from './wechat.js';
+export {
+  runWechatDraft,
+  runWechatTitles,
+  runWechatLayout,
+} from './wechat.js';
+export type { WechatSkillResult, WechatSkillName, WechatSkillDeps } from './wechat.js';
 
 // ---- A1/A2/A3 flows (folded from src/agent/skills-logic.js) ----
 /**
@@ -47,6 +59,12 @@ export interface SkillDeps {
   proposeMove: (vaultRoot: string, from: string, to: string, summary?: string) => ProposeResult;
   proposeCreate: (vaultRoot: string, rel: string, content: string, summary?: string) => ProposeResult;
   streamText?: (opts: StreamTextOptions) => Promise<StreamTextResult>;
+  /** Desktop local tool: write WeChat layout HTML under 90-附件/公众号/layout/. */
+  writeLayout?: (
+    vaultRoot: string,
+    relPath: string,
+    html: string,
+  ) => { ok: true; path: string } | { ok: false; error: string };
 }
 
 /** Result of one A1/A2/A3 run (success or failure, always tagged viaSkills/skill). */
@@ -62,7 +80,8 @@ export interface SkillResult {
   backend?: string;
   model?: string;
   viaSkills: true;
-  skill: 'ask' | 'sortInbox' | 'makeCard';
+  skill: 'ask' | 'sortInbox' | 'makeCard' | 'wechatDraft' | 'wechatTitles' | 'wechatLayout';
+  layoutPath?: string;
   [extra: string]: unknown;
 }
 
@@ -312,6 +331,10 @@ export function createSkillsEngine(deps: SkillDeps, meta: { id: string; backend:
     ask: (opts: { vaultRoot: string; question: string }) => runAsk(deps, opts),
     sortInbox: (opts: { vaultRoot: string; noteRel: string }) => runSortInbox(deps, opts),
     makeCard: (opts: { vaultRoot: string; noteRel: string }) => runMakeCard(deps, opts),
+    wechatDraft: (opts: { vaultRoot: string; briefRel: string }) => runWechatDraft(deps, opts),
+    wechatTitles: (opts: { vaultRoot: string; draftRel: string }) => runWechatTitles(deps, opts),
+    wechatLayout: (opts: { vaultRoot: string; draftRel: string; title?: string }) =>
+      runWechatLayout(deps, opts),
   };
 }
 
@@ -480,6 +503,59 @@ export class KvdSkillsService extends Service {
     if (!gate.ok) return { ...gate, viaSkills: true, skill: 'makeCard' };
     const deps = await this.buildDeps(opts);
     return runMakeCard(deps, { vaultRoot: gate.root, noteRel: opts.noteRel });
+  }
+
+  /**
+   * W2 — Brief → draft proposal under 10-卡片盒/公众号/drafts/
+   */
+  async wechatDraft(opts: {
+    briefRel: string;
+    vaultRoot?: string;
+    forceMock?: boolean;
+    writeLayout?: SkillDeps['writeLayout'];
+  }): Promise<SkillResult | WechatSkillResult> {
+    const gate = this.requireRoot(opts && opts.vaultRoot);
+    if (!gate.ok) return { ...gate, viaSkills: true, skill: 'wechatDraft' };
+    const deps = await this.buildDeps(opts);
+    if (opts.writeLayout) deps.writeLayout = opts.writeLayout;
+    return runWechatDraft(deps, { vaultRoot: gate.root, briefRel: opts.briefRel });
+  }
+
+  /**
+   * W2 — draft → titles proposal under 10-卡片盒/公众号/review/
+   */
+  async wechatTitles(opts: {
+    draftRel: string;
+    vaultRoot?: string;
+    forceMock?: boolean;
+    writeLayout?: SkillDeps['writeLayout'];
+  }): Promise<SkillResult | WechatSkillResult> {
+    const gate = this.requireRoot(opts && opts.vaultRoot);
+    if (!gate.ok) return { ...gate, viaSkills: true, skill: 'wechatTitles' };
+    const deps = await this.buildDeps(opts);
+    if (opts.writeLayout) deps.writeLayout = opts.writeLayout;
+    return runWechatTitles(deps, { vaultRoot: gate.root, draftRel: opts.draftRel });
+  }
+
+  /**
+   * W2 — draft → layout HTML via desktop local tool (not Apply into 90-附件).
+   */
+  async wechatLayout(opts: {
+    draftRel: string;
+    title?: string;
+    vaultRoot?: string;
+    forceMock?: boolean;
+    writeLayout?: SkillDeps['writeLayout'];
+  }): Promise<SkillResult | WechatSkillResult> {
+    const gate = this.requireRoot(opts && opts.vaultRoot);
+    if (!gate.ok) return { ...gate, viaSkills: true, skill: 'wechatLayout' };
+    const deps = await this.buildDeps(opts);
+    if (opts.writeLayout) deps.writeLayout = opts.writeLayout;
+    return runWechatLayout(deps, {
+      vaultRoot: gate.root,
+      draftRel: opts.draftRel,
+      title: opts.title,
+    });
   }
 }
 

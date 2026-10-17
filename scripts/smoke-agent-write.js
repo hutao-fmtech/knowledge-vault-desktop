@@ -599,6 +599,73 @@ function assert(cond, msg) {
     assert(Object.prototype.hasOwnProperty.call(pkg.dependencies, row.name.split('/').slice(0, 2).join('/')), `cordis.yml row ${row.id} -> ${row.name} is an apps/desktop dependency`);
   }
 
+
+  // --- W2: Brief → draft → titles → layout (local tool, not Apply into 90-附件) ---
+  {
+    const { writeWechatLayoutHtml } = await import('../packages/vault/lib/index.js');
+    const { hasPendingMarker } = await import('../packages/skills-core/lib/index.js');
+    const w2Brief = '10-卡片盒/公众号/briefs/w2-smoke-brief.md';
+    fs.writeFileSync(
+      path.join(vault, ...w2Brief.split('/')),
+      '# W2 Smoke Brief\n\n写一篇 Knowledge Vault 公众号流水线说明：Brief→成稿→标题→排版。材料公开可核验，禁止占位待补段。\n',
+      'utf8',
+    );
+    const w2Engine = createSkillsEngine(
+      {
+        style: 'mock',
+        hasKey: false,
+        backend: 'mock',
+        search: searchVault,
+        resolve: resolveVaultPath,
+        proposeMove,
+        proposeCreate,
+        writeLayout: (root, rel, html) => {
+          const w = writeWechatLayoutHtml(root, rel, html);
+          return w.ok ? { ok: true, path: w.path } : w;
+        },
+      },
+      { id: 'mock-w2', backend: 'mock' },
+    );
+    const draftRes = await w2Engine.wechatDraft({ vaultRoot: vault, briefRel: w2Brief });
+    assert(draftRes.ok && draftRes.skill === 'wechatDraft', 'w2 draft ok');
+    assert(draftRes.proposals && draftRes.proposals.length === 1, 'w2 draft proposal');
+    assert(!hasPendingMarker(draftRes.proposals[0].content), 'w2 draft no 【待补】');
+    assert(
+      String(draftRes.proposals[0].path).startsWith('10-卡片盒/公众号/drafts/'),
+      'w2 draft path under drafts',
+    );
+    assert(
+      !fs.existsSync(path.join(vault, ...String(draftRes.proposals[0].path).split('/'))),
+      'w2 draft not on disk before Apply',
+    );
+    assert(applyProposal(vault, draftRes.proposals[0]).ok, 'w2 apply draft');
+    const draftRel = draftRes.proposals[0].path;
+    assert(fs.existsSync(path.join(vault, ...draftRel.split('/'))), 'w2 draft on disk after Apply');
+
+    const titlesRes = await w2Engine.wechatTitles({ vaultRoot: vault, draftRel });
+    assert(titlesRes.ok && titlesRes.skill === 'wechatTitles', 'w2 titles ok');
+    assert(String(titlesRes.proposals[0].path).startsWith('10-卡片盒/公众号/review/'), 'w2 titles under review');
+    assert(applyProposal(vault, titlesRes.proposals[0]).ok, 'w2 apply titles');
+
+    assert(
+      !proposeCreate(vault, '90-附件/公众号/layout/smoke-hack.html', '<p>x</p>', 'bad').ok,
+      'w2 still reject propose into 90-附件',
+    );
+
+    const layoutRes = await w2Engine.wechatLayout({ vaultRoot: vault, draftRel });
+    assert(layoutRes.ok && layoutRes.skill === 'wechatLayout', 'w2 layout ok');
+    assert((layoutRes.proposals || []).length === 0, 'w2 layout has no proposals');
+    assert(layoutRes.layoutPath && layoutRes.layoutPath.startsWith('90-附件/公众号/layout/'), 'w2 layout path');
+    assert(fs.existsSync(path.join(vault, ...layoutRes.layoutPath.split('/'))), 'w2 layout on disk via local tool');
+    const layoutHtml = fs.readFileSync(path.join(vault, ...layoutRes.layoutPath.split('/')), 'utf8');
+    assert(/复制到公众号/.test(layoutHtml), 'w2 layout has copy button');
+    assert(layoutRes.backend === 'local-tool', 'w2 layout backend local-tool');
+
+    const oaNotes2 = listWechatOaNotes(vault);
+    assert(oaNotes2.includes(w2Brief), 'w2 brief listed');
+    assert(oaNotes2.includes(draftRel), 'w2 draft listed');
+  }
+
   console.log('AGENT_SMOKE_OK', `${asserts} asserts`, vault);
 })().catch((err) => {
   console.error(err);

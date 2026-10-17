@@ -166,6 +166,7 @@ const WECHAT_INTEL_DIR = '公众号线索';
 const WECHAT_SIDEBAR_DIRS: readonly string[] = [
   '10-卡片盒/公众号/briefs',
   '10-卡片盒/公众号/drafts',
+  '10-卡片盒/公众号/review',
 ];
 
 function isMdNote(name: string): boolean {
@@ -193,7 +194,7 @@ export function listInboxNotes(vaultRoot: string): string[] {
 }
 
 /**
- * List markdown notes under 公众号 briefs/ and drafts/ (excludes README).
+ * List markdown notes under 公众号 briefs/ drafts/ review/ (excludes README).
  */
 export function listWechatOaNotes(vaultRoot: string): string[] {
   const out: string[] = [];
