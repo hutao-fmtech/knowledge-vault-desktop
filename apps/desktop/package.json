@@ -1,6 +1,6 @@
 {
   "name": "knowledge-vault-desktop",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Knowledge Vault Desktop — one-click Obsidian-compatible PARA/MOC/Zettelkasten vault creator",
   "main": "lib/main.js",
   "author": "hutao-fmtech",

@@ -1,3 +1,25 @@
+## Knowledge Vault v0.3.1（预发布 / pre-release）
+
+### 变更
+- **W2 公众号写作**（#27）：Brief → 成稿 → 标题 → 排版 HTML，全部落在 vault 路径（`10-卡片盒/公众号/` + `90-附件/公众号/layout/`）；复用已改指 vault 的 writing skills；**不**自动登录/发布微信。
+- **W3 发布辅助**（#28）：
+  - **一键复制 layout HTML**：从 `90-附件/公众号/layout/` 解析并写入系统剪贴板（可粘贴进公众号后台）。
+  - **标记已发布**：经 proposal → Apply 更新 frontmatter（`wechat_status` / `published_at`）并归档到 `05-归档/公众号/`（非静默 fs 移动）。
+  - **本地预览**：用系统默认方式打开本地 layout HTML。
+
+### 待真机验证 / 已知限制
+- 无微信自动登录 / 自动群发（刻意不做）。
+- Mac / Win 真机高级档检查仍待验证；#20（Windows）仍为已知限制。
+
+### English (brief)
+- W2 WeChat OA writing (#27): Brief → draft → titles → layout into vault paths; no WeChat auto-login/publish.
+- W3 publish-assist (#28): one-click copy layout HTML to clipboard; mark published → archive under `05-归档/公众号` via proposal→Apply; optional local preview.
+- Hard no: WeChat credentials / auto mass-send.
+- Pending: Mac/Win real-machine advanced checks; #20 remains a known Windows limit.
+
+CI: version 0.3.1; tag/GitHub Release deferred until after merge (涛 / Quill).
+
+
 ## Knowledge Vault v0.3.0（预发布 / pre-release）
 
 ### 变更
