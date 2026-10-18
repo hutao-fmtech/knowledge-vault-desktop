@@ -1,4 +1,4 @@
-import { commandLanguageOf } from '../src/approval-bridge.js';
+import { approvalCommandHeading, commandLanguageOf } from '../src/approval-bridge.js';
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -45,4 +45,7 @@ test('approval dialog labels pwsh as PowerShell and bash as bash', () => {
   assert.equal(commandLanguageOf('pwsh'), 'PowerShell');
   assert.equal(commandLanguageOf('bash'), 'bash');
   assert.equal(commandLanguageOf('vault_propose_change'), null);
+  assert.equal(approvalCommandHeading('PowerShell'), 'PowerShell 命令');
+  assert.equal(approvalCommandHeading('bash'), 'bash 命令');
+  assert.equal(approvalCommandHeading(null), '命令');
 });

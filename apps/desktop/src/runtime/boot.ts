@@ -16,6 +16,7 @@ import type {} from '@kvd/ipc-bridge';
 import type {} from '@kvd/skills';
 import { DEFAULT_ROWS, resolvePlugin, advancedRowsFor } from './composition.js';
 import type { AdvancedMountOptions, PluginRow } from './composition.js';
+import { installSafePwshEncodingPreamble } from './pwsh-encoding.js';
 
 export interface Runtime {
   ctx: Context;
@@ -101,6 +102,9 @@ export async function mountAdvanced(opts: AdvancedMountOptions): Promise<Fiber> 
   if (advancedMounting) return advancedMounting;
 
   advancedMounting = (async () => {
+    // Issue #20: before dsh-pwsh-sandbox mounts, make the UTF-8 preamble
+    // ConstrainedLanguage-safe (no-op on non-Windows / bash rows).
+    installSafePwshEncodingPreamble();
     const rows = advancedRowsFor(opts);
     const AdvancedGroup = {
       name: 'kvd-advanced-group',

@@ -99,6 +99,8 @@ jobs:
             '✓ system prompt names the PowerShell shell tool' \
             '✓ real call intercepted BEFORE execution with full command + all arguments (AC-13)' \
             '✓ approval dialog labels the command as PowerShell' \
+            '✓ approval dialog heading is exactly "PowerShell 命令"' \
+            '✓ safe pwsh encoding preamble installed at advanced mount (issue #20)' \
             '✓ Deny prevents execution (file not created)' \
             '✓ approved command still cannot write: sandbox is read-only' \
             '✓ read-only check is not vacuous: confined pwsh actually ran (read + listing output present)' \

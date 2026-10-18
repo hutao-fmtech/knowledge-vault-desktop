@@ -36,6 +36,11 @@ export function commandLanguageOf(tool: string): CommandLanguage {
   return null;
 }
 
+/** Dialog heading for a shell command: "PowerShell 命令" / "bash 命令" / "命令". */
+export function approvalCommandHeading(lang: CommandLanguage): string {
+  return lang ? `${lang} 命令` : '命令';
+}
+
 export interface ApprovalBridgeConfig {
   getPolicy?: () => BridgePolicy;
   requestApproval?: (req: ApprovalUiRequest) => Promise<unknown> | unknown;

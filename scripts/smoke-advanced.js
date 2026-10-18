@@ -441,10 +441,24 @@ async function partB(tmp) {
       callId: 'toolu_deny',
     });
     ok(host.status().running && isAdvancedMounted(), 'advanced on: composition advanced fiber mounted');
+    {
+      const enc = await import('../apps/desktop/lib/runtime/pwsh-encoding.js');
+      ok(enc.isSafePwshEncodingPreambleInstalled(), 'safe pwsh encoding preamble installed at advanced mount (issue #20)');
+      ok(enc.SAFE_ENCODING_PREAMBLE.includes('SilentlyContinue') && enc.SAFE_ENCODING_PREAMBLE.includes('try'), 'SAFE_ENCODING_PREAMBLE is ConstrainedLanguage-defensive');
+      const { ENCODING_PREAMBLE } = await import('@deepseek-ai/dsh-pwsh-local');
+      ok(enc.withSafeEncodingPreamble(ENCODING_PREAMBLE + 'x') === enc.SAFE_ENCODING_PREAMBLE + 'x', 'withSafeEncodingPreamble swaps upstream preamble');
+    }
     const a1 = approvals.find((x) => x.tool === SH);
     ok(a1 && a1.command === pwnCmd && a1.arguments.description === 'smoke deny', 'real call intercepted BEFORE execution with full command + all arguments (AC-13)');
     ok(JSON.stringify(a1.arguments) === JSON.stringify({ command: pwnCmd, description: 'smoke deny' }), 'approval modal payload includes ALL arguments');
     ok(a1.commandLanguage === (SH === 'pwsh' ? 'PowerShell' : 'bash'), `approval dialog labels the command as ${SH === 'pwsh' ? 'PowerShell' : 'bash'}`);
+    {
+      const { approvalCommandHeading } = await import('../packages/advanced/lib/approval-bridge.js');
+      const want = SH === 'pwsh' ? 'PowerShell 命令' : 'bash 命令';
+      ok(approvalCommandHeading(a1.commandLanguage) === want, `approval dialog heading is exactly "${want}"`);
+      const appSrc = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/app.ts'), 'utf8');
+      ok(/approvalCommandHeading\(req\.commandLanguage\)/.test(appSrc) && /\$\{lang\} 命令/.test(appSrc), 'renderer applies approvalCommandHeading for the dialog label');
+    }
     ok(res.isError, 'deny returns an error tool result');
     ok(!fs.existsSync(path.join(vault, 'pwned.txt')), 'Deny prevents execution (file not created)');
     ok(log.read().some((x) => x.event === 'tool-result' && x.tool === SH && x.isError), 'denied call reported as error result and logged');
