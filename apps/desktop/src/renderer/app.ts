@@ -508,6 +508,11 @@ async function setPolicy(policy: string): Promise<void> {
   if (res.state) renderAdvanced({ ...advState, ...res.state });
 }
 
+/** Must match @kvd/advanced approvalCommandHeading (issue #20 dialog label). */
+function approvalCommandHeading(lang: string | null | undefined): string {
+  return lang ? `${lang} 命令` : '命令';
+}
+
 function showNextApproval() {
   const req = approvalQueue[0];
   if (!req) {
@@ -519,7 +524,7 @@ function showNextApproval() {
   adv.approvalQueue.textContent = approvalQueue.length > 1 ? `（另有 ${approvalQueue.length - 1} 个待审批）` : '';
   adv.approvalCmdWrap.classList.toggle('hidden', req.command == null);
   adv.approvalCmd.textContent = req.command == null ? '' : req.command;
-  adv.approvalCmdLabel.textContent = req.commandLanguage ? `${req.commandLanguage} 命令` : '命令';
+  adv.approvalCmdLabel.textContent = approvalCommandHeading(req.commandLanguage);
   adv.approvalArgs.textContent = JSON.stringify(req.arguments, null, 2);
   adv.approval.classList.remove('hidden');
 }
