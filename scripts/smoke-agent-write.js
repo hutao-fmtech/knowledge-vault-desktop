@@ -22,6 +22,7 @@ function assert(cond, msg) {
     proposeMove,
     applyProposal,
     discardProposal,
+    formatProposalReview,
   } = await import('../packages/proposals/lib/index.js');
   const { resolveVaultPath } = await import('../packages/vault/lib/index.js');
   const { createSkillsEngine } = await import('../packages/skills/lib/index.js');
@@ -696,6 +697,13 @@ function assert(cond, msg) {
     assert(pubRes.proposals && pubRes.proposals.length === 2, 'w3 publish edit+move proposals');
     assert(pubRes.proposals[0].kind === 'edit', 'w3 first proposal is edit mark');
     assert(pubRes.proposals[1].kind === 'move', 'w3 second proposal is move archive');
+    // Reviewable note diff (探索者 #2): edit payload carries before+content → unified review text
+    assert(typeof pubRes.proposals[0].before === 'string', 'w3 edit has before for review diff');
+    const editReview = formatProposalReview(pubRes.proposals[0]);
+    assert(/^编辑 /.test(editReview), 'w3 edit review shows path');
+    assert(/^[+-]/m.test(editReview), 'w3 edit review has +/- unified lines');
+    const moveReview = formatProposalReview(pubRes.proposals[1]);
+    assert(/→/.test(moveReview), 'w3 move review shows from→to');
     assert(/wechat_status: published/.test(pubRes.proposals[0].content), 'w3 frontmatter mark');
     assert(
       String(pubRes.proposals[1].to).startsWith('05-归档/公众号/'),

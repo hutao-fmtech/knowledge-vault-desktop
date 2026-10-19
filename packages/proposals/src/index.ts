@@ -38,6 +38,99 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+
+/** One line of a unified-style review diff (pure; no I/O). */
+export type DiffLine = { op: 'equal' | 'insert' | 'delete'; text: string };
+
+function splitLines(s: string): string[] {
+  if (s === '') return [];
+  const parts = s.split('\n');
+  // Drop trailing empty from a final newline so "a\n" and "a" compare as one line.
+  if (parts.length > 0 && parts[parts.length - 1] === '') parts.pop();
+  return parts;
+}
+
+/**
+ * Line-level LCS diff for proposal review UI ("可审 diff").
+ * Pure: works from proposal.before / proposal.content already on the payload.
+ */
+export function lineDiff(before: string, after: string): DiffLine[] {
+  const a = splitLines(before);
+  const b = splitLines(after);
+  const n = a.length;
+  const m = b.length;
+  // Flat (n+1)*(m+1) DP table avoids nested noUncheckedIndexedAccess noise.
+  const dp = new Array<number>((n + 1) * (m + 1)).fill(0);
+  const at = (i: number, j: number): number => dp[i * (m + 1) + j]!;
+  const set = (i: number, j: number, v: number): void => {
+    dp[i * (m + 1) + j] = v;
+  };
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      set(i, j, a[i] === b[j] ? at(i + 1, j + 1) + 1 : Math.max(at(i + 1, j), at(i, j + 1)));
+    }
+  }
+  const out: DiffLine[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      out.push({ op: 'equal', text: a[i]! });
+      i += 1;
+      j += 1;
+    } else if (at(i + 1, j) >= at(i, j + 1)) {
+      out.push({ op: 'delete', text: a[i]! });
+      i += 1;
+    } else {
+      out.push({ op: 'insert', text: b[j]! });
+      j += 1;
+    }
+  }
+  while (i < n) {
+    out.push({ op: 'delete', text: a[i]! });
+    i += 1;
+  }
+  while (j < m) {
+    out.push({ op: 'insert', text: b[j]! });
+    j += 1;
+  }
+  return out;
+}
+
+/** Minimal shape needed to format a review pane (Proposal or IPC payload). */
+export type ProposalReviewInput = {
+  kind: 'create' | 'edit' | 'move' | string;
+  path?: string;
+  from?: string;
+  to?: string;
+  content?: string;
+  before?: string;
+};
+
+/**
+ * Human-readable review body for the Approve/Apply gate.
+ * Edit → unified line diff; create → full proposed body; move → from → to.
+ */
+export function formatProposalReview(p: ProposalReviewInput | null | undefined): string {
+  if (!p || !p.kind) return '';
+  if (p.kind === 'move') return `移动 ${p.from ?? ''} → ${p.to ?? ''}`;
+  if (p.kind === 'create') {
+    const body = p.content ?? '';
+    return `创建 ${p.path ?? ''}\n\n${body}`;
+  }
+  if (p.kind === 'edit') {
+    const lines = lineDiff(p.before ?? '', p.content ?? '');
+    const body = lines
+      .map((l) => {
+        const prefix = l.op === 'equal' ? ' ' : l.op === 'insert' ? '+' : '-';
+        return `${prefix}${l.text}`;
+      })
+      .join('\n');
+    return `编辑 ${p.path ?? ''}\n\n${body}`;
+  }
+  return String(p.kind);
+}
+
 export function proposeCreate(vaultRoot: string, relPath: unknown, content: unknown, summary?: string): ProposeResult {
   const resolved = resolveVaultPath(vaultRoot, relPath);
   if (!resolved.ok) return resolved;
