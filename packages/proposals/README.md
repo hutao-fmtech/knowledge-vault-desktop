@@ -2,6 +2,9 @@
 
 kvd-proposals: the ONLY write path (propose -> user Apply).
 
+Also exports pure `lineDiff` / `formatProposalReview` for the sidebar
+「可审 diff」pane (edit = unified before→content; create = full body; move = from→to).
+
 Mounted from `apps/desktop/cordis.yml`.
 
 ## Public exports

@@ -10,6 +10,7 @@ interface UiProposal {
   from?: string;
   to?: string;
   content?: string;
+  before?: string;
   summary?: string;
 }
 

@@ -109,10 +109,27 @@ code {
   font-size: 0.82rem;
 }
 .proposal .meta { color: var(--muted); margin-bottom: 6px; }
-.proposal pre {
-  margin: 0 0 8px; max-height: 120px; overflow: auto; background: #fafaf9;
-  padding: 8px; border-radius: 6px; font-size: 0.75rem; white-space: pre-wrap;
+.proposal-detail { margin: 0 0 8px; }
+.proposal .diff-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem; color: var(--muted); margin-bottom: 4px; word-break: break-all;
 }
+.proposal pre.proposal-body,
+.proposal pre.proposal-diff {
+  margin: 0; max-height: 220px; overflow: auto; background: #fafaf9;
+  padding: 8px; border-radius: 6px; font-size: 0.75rem; white-space: pre-wrap;
+  border: 1px solid var(--line);
+}
+.proposal pre.proposal-diff { padding: 4px 0; }
+.proposal-diff .diff-eq,
+.proposal-diff .diff-add,
+.proposal-diff .diff-del {
+  padding: 0 8px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap; word-break: break-word;
+}
+.proposal-diff .diff-add { background: #ecfdf5; color: #166534; }
+.proposal-diff .diff-del { background: #fef2f2; color: #991b1b; }
+.proposal-diff .diff-eq { color: var(--ink); }
 
 /* ---- Advanced mode (AC-11..14) ------------------------------------------ */
 .hero { position: relative; }

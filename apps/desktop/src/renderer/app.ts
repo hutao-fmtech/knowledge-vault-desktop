@@ -82,6 +82,108 @@ async function refreshNameHint() {
   els.pathPreview.textContent = joinPreview(state.parentDir, result.name);
 }
 
+
+/** Line-level LCS diff for proposal review (mirrors @kvd/proposals lineDiff; renderer has no package imports). */
+type DiffLine = { op: 'equal' | 'insert' | 'delete'; text: string };
+
+function splitDiffLines(s: string): string[] {
+  if (s === '') return [];
+  const parts = s.split('\n');
+  if (parts.length > 0 && parts[parts.length - 1] === '') parts.pop();
+  return parts;
+}
+
+function lineDiff(before: string, after: string): DiffLine[] {
+  const a = splitDiffLines(before);
+  const b = splitDiffLines(after);
+  const n = a.length;
+  const m = b.length;
+  // Flat (n+1)*(m+1) DP table avoids nested noUncheckedIndexedAccess noise.
+  const dp = new Array<number>((n + 1) * (m + 1)).fill(0);
+  const at = (i: number, j: number): number => dp[i * (m + 1) + j]!;
+  const set = (i: number, j: number, v: number): void => {
+    dp[i * (m + 1) + j] = v;
+  };
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      set(i, j, a[i] === b[j] ? at(i + 1, j + 1) + 1 : Math.max(at(i + 1, j), at(i, j + 1)));
+    }
+  }
+  const out: DiffLine[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      out.push({ op: 'equal', text: a[i]! });
+      i += 1;
+      j += 1;
+    } else if (at(i + 1, j) >= at(i, j + 1)) {
+      out.push({ op: 'delete', text: a[i]! });
+      i += 1;
+    } else {
+      out.push({ op: 'insert', text: b[j]! });
+      j += 1;
+    }
+  }
+  while (i < n) {
+    out.push({ op: 'delete', text: a[i]! });
+    i += 1;
+  }
+  while (j < m) {
+    out.push({ op: 'insert', text: b[j]! });
+    j += 1;
+  }
+  return out;
+}
+
+/** Fill the proposal detail pane from the IPC payload (create body / edit unified diff / move summary). */
+function fillProposalDetail(host: HTMLElement, p: UiProposal): void {
+  host.replaceChildren();
+  if (p.kind === 'move') {
+    const pre = document.createElement('pre');
+    pre.className = 'proposal-body';
+    pre.textContent = `${p.from} → ${p.to}`;
+    host.appendChild(pre);
+    return;
+  }
+  if (p.kind === 'create') {
+    const pre = document.createElement('pre');
+    pre.className = 'proposal-body';
+    pre.textContent = `创建 ${p.path}\n\n${p.content || ''}`;
+    host.appendChild(pre);
+    return;
+  }
+  if (p.kind === 'edit') {
+    const pathEl = document.createElement('div');
+    pathEl.className = 'diff-path';
+    pathEl.textContent = `编辑 ${p.path}`;
+    host.appendChild(pathEl);
+    const box = document.createElement('pre');
+    box.className = 'proposal-diff';
+    const lines = lineDiff(p.before || '', p.content || '');
+    if (!lines.length) {
+      const empty = document.createElement('div');
+      empty.className = 'diff-eq';
+      empty.textContent = '（无内容变化）';
+      box.appendChild(empty);
+    } else {
+      for (const l of lines) {
+        const row = document.createElement('div');
+        row.className = l.op === 'equal' ? 'diff-eq' : l.op === 'insert' ? 'diff-add' : 'diff-del';
+        const prefix = l.op === 'equal' ? ' ' : l.op === 'insert' ? '+' : '-';
+        row.textContent = `${prefix}${l.text}`;
+        box.appendChild(row);
+      }
+    }
+    host.appendChild(box);
+    return;
+  }
+  const pre = document.createElement('pre');
+  pre.className = 'proposal-body';
+  pre.textContent = String(p.kind);
+  host.appendChild(pre);
+}
+
 function renderProposals() {
   els.proposalList.innerHTML = '';
   if (!state.proposals.length) {
@@ -91,13 +193,16 @@ function renderProposals() {
   for (const p of state.proposals) {
     const div = document.createElement('div');
     div.className = 'proposal';
-    let detail = '';
-    if (p.kind === 'move') detail = `${p.from} → ${p.to}`;
-    else if (p.kind === 'create') detail = `创建 ${p.path}\n\n${(p.content || '').slice(0, 400)}`;
-    else if (p.kind === 'edit') detail = `编辑 ${p.path}`;
-    div.innerHTML = `<div class="meta">${p.summary || p.kind}</div><pre></pre><div class="actions"></div>`;
-    div.querySelector('pre')!.textContent = detail; // non-null: set via innerHTML just above
-    const actions = div.querySelector('.actions')!; // non-null: set via innerHTML just above
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.textContent = p.summary || p.kind;
+    div.appendChild(meta);
+    const detail = document.createElement('div');
+    detail.className = 'proposal-detail';
+    fillProposalDetail(detail, p);
+    div.appendChild(detail);
+    const actions = document.createElement('div');
+    actions.className = 'actions';
     const applyBtn = document.createElement('button');
     applyBtn.className = 'primary';
     applyBtn.textContent = 'Apply';
@@ -123,6 +228,7 @@ function renderProposals() {
     });
     actions.appendChild(applyBtn);
     actions.appendChild(discardBtn);
+    div.appendChild(actions);
     els.proposalList.appendChild(div);
   }
 }
