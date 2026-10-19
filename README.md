@@ -50,6 +50,7 @@ Output lands under `apps/desktop/dist/` (git-ignored). Pushing a tag `vX.Y.Z` ru
 - Agent sidebar (default mode): ask with citations, sort inbox → PARA, make a Zettelkasten card — propose then Apply
 - Optional Advanced mode (off by default): Cordis plugin fiber with per-call tool approval; API key stored in OS keychain / app config, never in the vault or repo
 - Local-first; works offline with a mock LLM when no API key is set
+- Optional Chrome/Edge clipper (`apps/clipper`) writing Markdown into `01-收件箱` via File System Access API (desktop app need not be running)
 
 **Does not**
 
@@ -61,7 +62,8 @@ Output lands under `apps/desktop/dist/` (git-ignored). Pushing a tag `vX.Y.Z` ru
 
 ```
 apps/desktop/     Electron shell (main / preload / renderer), cordis.yml, electron-builder
-packages/         Capability packages (@kvd/*): vault, search, proposals, skills,
+apps/clipper/     Chrome/Edge MV3 browser clipper (unpacked) → vault 01-收件箱
+packages/         Capability packages (@kvd/*): vault, clipper, search, proposals, skills,
                   skills-core, llm-mock, keychain, privacy, prefs, ipc-bridge, advanced,
                   shared, template (bundled Obsidian vault template)
 docs/             architecture/ · decisions/ (ADRs) · requirements/ · verification/

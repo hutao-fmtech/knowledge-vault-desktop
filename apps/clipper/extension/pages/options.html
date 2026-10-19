@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Knowledge Vault Clipper — 选项</title>
+  <style>
+    :root { font: 14px/1.5 system-ui, sans-serif; color-scheme: light dark; }
+    body { max-width: 560px; margin: 32px auto; padding: 0 16px; }
+    button { font: inherit; padding: 8px 14px; border-radius: 6px; cursor: pointer; }
+    button.primary { background: #1a73e8; color: #fff; border: none; }
+    .muted { color: #666; }
+    #status { margin-top: 12px; }
+    #status.ok { color: #0a7; }
+    #status.err { color: #c22; }
+    textarea { width: 100%; box-sizing: border-box; font: inherit; }
+    .card { border: 1px solid #ccc3; border-radius: 8px; padding: 16px; margin: 16px 0; }
+  </style>
+</head>
+<body>
+  <h1>Knowledge Vault Clipper</h1>
+  <p class="muted">Chrome / Edge · 本地写入 · 无账号 · 不依赖桌面端进程</p>
+
+  <div class="card">
+    <h2>知识库（一次性）</h2>
+    <p>选择<strong>Vault 根目录</strong>（其中必须已有 <code>01-收件箱</code>）。扩展只会往该收件箱写 Markdown。</p>
+    <p id="vault-label" class="muted">尚未选择</p>
+    <button type="button" class="primary" id="pick">选择 Vault 根目录</button>
+    <button type="button" id="clear">清除</button>
+    <p id="status" role="status"></p>
+  </div>
+
+  <div class="card" id="clip-card" hidden>
+    <h2>从右键菜单摘录</h2>
+    <label>选中文本<br /><textarea id="quote" rows="5"></textarea></label>
+    <label>批注（可选）<br /><textarea id="annotation" rows="3"></textarea></label>
+    <p id="clip-meta" class="muted"></p>
+    <button type="button" class="primary" id="save-clip">保存到收件箱</button>
+    <p id="clip-status" role="status"></p>
+  </div>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>

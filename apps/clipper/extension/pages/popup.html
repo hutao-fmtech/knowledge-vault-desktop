@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Clip to Vault</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <strong>Knowledge Vault</strong>
+    <span class="muted">→ 01-收件箱</span>
+  </header>
+  <label class="field">
+    <span>选中文本</span>
+    <textarea id="quote" rows="6" placeholder="在页面中选中文本后再打开此弹窗"></textarea>
+  </label>
+  <label class="field">
+    <span>批注（可选）</span>
+    <textarea id="annotation" rows="3" placeholder="可选批注"></textarea>
+  </label>
+  <p id="meta" class="muted"></p>
+  <p id="status" role="status"></p>
+  <div class="actions">
+    <button type="button" id="save" class="primary">保存到收件箱</button>
+    <a href="options.html" target="_blank" id="opts">选择知识库…</a>
+  </div>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
