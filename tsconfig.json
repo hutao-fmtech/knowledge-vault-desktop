@@ -41,6 +41,9 @@
       "path": "./packages/vault"
     },
     {
+      "path": "./packages/clipper"
+    },
+    {
       "path": "./apps/desktop"
     }
   ]

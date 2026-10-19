@@ -17,8 +17,10 @@ apps/desktop            knowledge-vault-desktop (version = app/installer version
   src/runtime/boot.mjs  Cordis composition root (boot / advanced child fiber / dispose)
   src/runtime/composition.mjs  loads + validates cordis.yml, resolves rows to plugins
   build/                electron-builder resources
+apps/clipper            Chrome/Edge MV3 clipper (unpacked); File System Access → 01-收件箱
 packages/
   shared       @kvd/shared        models (route ids), config-dir
+  clipper      @kvd/clipper       clip Markdown format + Node write helper for 01-收件箱
   vault        @kvd/vault         kvd-vault service + path policy; ./create (vault creation)
   search       @kvd/search        kvd-search (vaultSearch)
   proposals    @kvd/proposals     kvd-proposals — the only write path (propose → Apply)
@@ -41,7 +43,9 @@ Each package: `package.json` (exact deps it imports, `exports` map = public API)
 
 ```
 apps/desktop ─► every plugin package named in cordis.yml + shared, template, vault, advanced, keychain
+apps/clipper ─► clipper           (parity tests; extension itself is plain MV3 JS)
 search, proposals ─► vault
+clipper ─► vault
 skills ─► proposals, shared, skills-core
 llm-mock ─► skills-core          (former skills ⇄ llm-mock cycle removed)
 keychain, prefs, advanced ─► shared

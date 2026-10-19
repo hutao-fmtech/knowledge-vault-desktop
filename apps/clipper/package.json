@@ -1,0 +1,17 @@
+{
+  "name": "knowledge-vault-clipper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Chrome/Edge MV3 clipper → vault 01-收件箱 (unpacked). Transport: File System Access API.",
+  "license": "MIT",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@kvd/clipper": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "4.1.8"
+  }
+}

@@ -1,0 +1,42 @@
+:root {
+  color-scheme: light dark;
+  font: 13px/1.4 system-ui, sans-serif;
+}
+body {
+  margin: 0;
+  padding: 12px;
+  width: 340px;
+  box-sizing: border-box;
+}
+header {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+.muted { color: #666; font-size: 12px; }
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font: inherit;
+}
+.actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 8px;
+}
+button.primary {
+  background: #1a73e8;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+button.primary:disabled { opacity: 0.5; cursor: default; }
+#status { min-height: 1.2em; margin: 4px 0 0; }
+#status.ok { color: #0a7; }
+#status.err { color: #c22; }

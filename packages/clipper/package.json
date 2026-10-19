@@ -1,0 +1,28 @@
+{
+  "name": "@kvd/clipper",
+  "version": "0.2.2",
+  "private": true,
+  "type": "module",
+  "description": "Browser clip → vault 01-收件箱: Markdown format, unique filenames, Node write helper (extension uses File System Access API).",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    }
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "lib/**/*.d.ts.map"
+  ],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@kvd/vault": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "4.1.8"
+  }
+}

@@ -75,12 +75,19 @@
       ],
       "@kvd/vault/sanitize": [
         "./packages/vault/src/sanitize.ts"
+      ],
+      "@kvd/clipper": [
+        "./packages/clipper/src/index.ts"
+      ],
+      "@kvd/shared/wechat-oa": [
+        "./packages/shared/src/wechat-oa.ts"
       ]
     }
   },
   "include": [
     "apps/*/test/**/*.ts",
     "packages/*/test/**/*.ts",
-    "vitest.config.mts"
+    "vitest.config.mts",
+    "apps/clipper/extension/modules/**/*.d.ts"
   ]
 }
