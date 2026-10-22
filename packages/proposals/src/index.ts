@@ -3,6 +3,7 @@
  * Listens to `kvd/vault-changed` and clears pending (fixes G4).
  * Registers apply/discard IPC on the bridge when `ipc` is available.
  */
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Context, Service } from '@deepseek-ai/cordis';
@@ -12,6 +13,16 @@ import { resolveVaultPath, assertInsideVault } from '@kvd/vault';
 
 // ---- pure proposal helpers (folded from src/agent/proposals.js) ----
 let _seq = 0;
+/** sha256 hex of file bytes (or a utf8 string). Used by the Apply stale-guard. */
+export function sha256Hex(data: Buffer | string): string {
+  return crypto.createHash('sha256').update(data).digest('hex');
+}
+
+/** User-facing message when the target changed between propose and Apply. */
+export function staleProposalError(rel: string, detail: string): string {
+  return `${detail}：${rel}。拟改动生成后文件已变化，为避免覆盖，已拒绝 Apply（未写入）。请重新生成拟改动。`;
+}
+
 function nextId(): string {
   _seq += 1;
   return `chg_${Date.now()}_${_seq}`;
@@ -25,6 +36,8 @@ export interface Proposal {
   to?: string;
   content?: string;
   before?: string;
+  /** edit only: sha256 (hex) of the target file bytes when the proposal was generated. */
+  beforeSha256?: string;
   summary: string;
 }
 
@@ -153,12 +166,14 @@ export function proposeEdit(vaultRoot: string, relPath: unknown, content: unknow
   if (!fs.existsSync(resolved.abs)) {
     return { ok: false, error: `文件不存在：${resolved.rel}` };
   }
-  const before = fs.readFileSync(resolved.abs, 'utf8');
+  const bytes = fs.readFileSync(resolved.abs);
+  const before = bytes.toString('utf8');
   const proposal: Proposal = {
     id: nextId(),
     kind: 'edit',
     path: resolved.rel,
     before,
+    beforeSha256: sha256Hex(bytes),
     content: String(content),
     summary: summary || `编辑 ${resolved.rel}`,
   };
@@ -206,7 +221,7 @@ export function applyProposal(vaultRoot: string, proposal: Proposal | null | und
       const resolved = resolveVaultPath(vaultRoot, proposal.path);
       if (!resolved.ok) return resolved;
       if (fs.existsSync(resolved.abs)) {
-        return { ok: false, error: `目标已存在：${resolved.rel}` };
+        return { ok: false, error: staleProposalError(resolved.rel, '目标已存在') };
       }
       atomicWrite(resolved.abs, proposal.content || '');
       return { ok: true, applied: proposal };
@@ -215,7 +230,15 @@ export function applyProposal(vaultRoot: string, proposal: Proposal | null | und
       const resolved = resolveVaultPath(vaultRoot, proposal.path);
       if (!resolved.ok) return resolved;
       if (!fs.existsSync(resolved.abs)) {
-        return { ok: false, error: `文件不存在：${resolved.rel}` };
+        return { ok: false, error: staleProposalError(resolved.rel, '文件已不存在') };
+      }
+      // Stale guard: the file must still be byte-identical to what was reviewed.
+      // Fall back to hashing `before` for proposals built without beforeSha256;
+      // with neither, fail closed (cannot prove it is safe to overwrite).
+      const expected =
+        proposal.beforeSha256 ?? (proposal.before != null ? sha256Hex(Buffer.from(proposal.before, 'utf8')) : null);
+      if (!expected || sha256Hex(fs.readFileSync(resolved.abs)) !== expected) {
+        return { ok: false, error: staleProposalError(resolved.rel, '文件已被修改') };
       }
       atomicWrite(resolved.abs, proposal.content || '');
       return { ok: true, applied: proposal };
