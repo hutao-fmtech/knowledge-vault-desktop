@@ -567,6 +567,20 @@ async function partB(tmp) {
     ok(approvals.length === n, 'log-only: call ran without an approval prompt');
     ok(log.read().some((x) => x.event === 'tool-call' && x.policy === 'log-only' && x.arguments && x.arguments.command === 'ls 01-收件箱'), 'log-only: call logged with full arguments');
 
+    // ---- AC-P2: "直接执行，只记日志" covers tool calls only; a note write is still just a proposal ----
+    {
+      const nP = approvals.length;
+      const beforeP = pending.size;
+      scripted.queue.push(
+        { tool: 'vault_propose_change', input: { kind: 'create', path: '10-卡片盒/log-only.md', content: '# lo\n', summary: 'log-only write' } },
+        { text: '已提出改动，等待 Apply。' },
+      );
+      const runLoProp = await host.run({ prompt: 'log-only 下做一张卡片', timeoutMs: 30000 });
+      ok(approvals.length === nP && runLoProp.toolCalls.some((c) => c.name === 'vault_propose_change' && !c.isError), 'AC-P2: under log-only the propose call runs without a modal');
+      ok(pending.size === beforeP + 1 && !fs.existsSync(path.join(vault, '10-卡片盒', 'log-only.md')), 'AC-P2: under log-only the agent write is only a proposal; not auto-applied');
+      ok(!('apply' in host) && !('applyProposal' in host), 'AC-P2: the advanced host exposes no Apply entry');
+    }
+
     // ---- AC1 under log-only: escalation is still hard-rejected ----
     {
       const nL = approvals.length;

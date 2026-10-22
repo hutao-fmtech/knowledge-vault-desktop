@@ -74,8 +74,15 @@
       <div class="agent-head">
         <h2>Agent</h2>
         <span id="agent-badge" class="badge">默认档</span>
+        <button type="button" id="btn-write-pause" class="icon-btn" title="暂停写入">⏸</button>
         <button type="button" id="btn-sidebar-settings" class="icon-btn" title="设置">⚙</button>
         <button type="button" id="btn-close-agent" class="icon-btn" title="关闭">×</button>
+      </div>
+      <div id="write-pause-indicator" class="advanced-indicator write-pause-indicator hidden" role="status" aria-live="polite">
+        <span class="dot"></span>
+        <strong>写入已暂停</strong>
+        <span class="muted-inline">仍可读、问答 · 不生成新拟改动 · Apply 已禁用</span>
+        <button type="button" id="btn-indicator-resume" class="indicator-btn">解除暂停</button>
       </div>
       <p id="agent-vault" class="agent-vault muted">未打开 vault</p>
       <div id="advanced-task" class="agent-block advanced-task hidden">
@@ -153,7 +160,16 @@
         <h2 id="settings-title">设置</h2>
         <button type="button" id="btn-close-settings" class="icon-btn" title="关闭">×</button>
       </div>
-      <nav class="tabs"><span class="tab active">高级</span></nav>
+      <nav class="tabs"><span class="tab active">Agent · 高级</span></nav>
+      <section class="settings-section" aria-label="Agent">
+        <label class="switch-row">
+          <input type="checkbox" id="toggle-write-pause" />
+          <span>
+            <strong>暂停写入</strong>
+            <small class="hint">开启后 Agent 仍可读、可问答，但不会生成新的拟改动，已有拟改动不能 Apply（可 Discard）。状态保存在应用配置中（不在 vault 里）。任何来源都可开启；解除只能在本机手动操作。即时生效，无需重启。</small>
+          </span>
+        </label>
+      </section>
       <section class="settings-section" aria-label="高级">
         <label class="switch-row">
           <input type="checkbox" id="toggle-advanced" />

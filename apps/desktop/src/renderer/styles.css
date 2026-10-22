@@ -179,3 +179,9 @@ code {
 }
 .approval-tool { margin: 8px 0; }
 .row button { white-space: nowrap; }
+
+/* ---- Global write pause (R2) -------------------------------------------- */
+.write-pause-indicator { position: static; margin: 0 0 8px; border-radius: 8px; flex-wrap: wrap; background: #1e3a8a; color: #eff6ff; border-bottom-color: #60a5fa; }
+.write-pause-indicator .dot { background: #60a5fa; box-shadow: 0 0 0 3px #60a5fa55; }
+.write-pause-indicator .indicator-btn { color: #1e3a8a; background: #eff6ff; }
+#btn-write-pause.active { background: #1e3a8a; color: #eff6ff; }
