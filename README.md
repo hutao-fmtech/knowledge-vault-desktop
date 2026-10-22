@@ -2,7 +2,7 @@
 
 Electron desktop app that creates an **Obsidian-compatible** personal knowledge vault from a **bundled offline** template (PARA / MOC / Zettelkasten), with an optional agent sidebar for ask-with-citations, inbox → PARA sorting, and Zettelkasten cards.
 
-Every agent write is a **proposed change**; disk updates only after you **Apply**. Paths outside the vault, `..`, `.obsidian/`, and `00-系统/` are rejected.
+Every agent write is a **proposed change**; disk updates only after you **Apply**. Paths outside the vault, `..`, `.obsidian/`, `.git/`, `.trash/`, `.vault/`, and `00-系统/` are rejected (case-insensitive). After Apply the file is read back and its sha256 checked; a mismatch is reported and the change is not marked applied.
 
 ## Install
 

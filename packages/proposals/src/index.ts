@@ -31,6 +31,8 @@ export function staleProposalError(rel: string, detail: string): string {
 
 /** Failure code for a stale proposal (agent-log will record it as `error: stale`). */
 export const STALE = 'STALE';
+/** Failure code when the read-back after an Apply write does not hash to what was reviewed (AL-12). */
+export const VERIFY_FAILED = 'VERIFY_FAILED';
 
 function nextId(): string {
   _seq += 1;
@@ -79,6 +81,7 @@ export function logErrorCode(code: string | undefined): string {
   if (code === 'WRITE_PAUSED') return 'write_paused';
   if (code === 'APPLY_FORBIDDEN') return 'apply_forbidden';
   if (code === 'NOT_FOUND') return 'not_found';
+  if (code === VERIFY_FAILED) return 'verify_failed';
   return 'apply_error';
 }
 
@@ -113,7 +116,23 @@ export interface ApplyRejection {
 }
 export type ApplyRejectedListener = (rejection: ApplyRejection) => void;
 export type ProposeResult = { ok: true; proposal: Proposal } | Failure;
-export type ApplyResult = { ok: true; applied: Proposal } | Failure;
+export type ApplyResult = ({ ok: true; applied: Proposal } | Failure) & {
+  /** AL-12: apply operation id, minted by ProposalsService (main process) when the write starts. */
+  applyOpId?: string;
+};
+
+/** Options for applyProposal. `readBack` exists for tests (simulate a bad disk); default fs.readFileSync. */
+export interface ApplyOptions {
+  readBack?: (absPath: string) => Buffer;
+}
+
+function verifyFailed(rel: string): Failure {
+  return {
+    ok: false,
+    code: VERIFY_FAILED,
+    error: `写入校验失败：回读 ${rel} 的 sha256 与预期不符。拟改动未标记为已应用，请检查该文件后再处理（可 Discard）。`,
+  };
+}
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -282,7 +301,8 @@ function atomicWrite(absPath: string, content: string): void {
 /**
  * Apply one proposal. Disk unchanged on failure.
  */
-export function applyProposal(vaultRoot: string, proposal: Proposal | null | undefined): ApplyResult {
+export function applyProposal(vaultRoot: string, proposal: Proposal | null | undefined, opts: ApplyOptions = {}): ApplyResult {
+  const readBack = opts.readBack ?? ((abs: string): Buffer => fs.readFileSync(abs));
   if (!proposal || !proposal.kind) {
     return { ok: false, error: '无效的拟改动' };
   }
@@ -294,6 +314,8 @@ export function applyProposal(vaultRoot: string, proposal: Proposal | null | und
         return { ok: false, code: STALE, error: staleProposalError(resolved.rel, '目标已存在') };
       }
       atomicWrite(resolved.abs, proposal.content || '');
+      // AL-12: read back and compare with what was reviewed.
+      if (sha256Hex(readBack(resolved.abs)) !== sha256Hex(Buffer.from(proposal.content || '', 'utf8'))) return verifyFailed(resolved.rel);
       return { ok: true, applied: proposal };
     }
     if (proposal.kind === 'edit') {
@@ -311,6 +333,7 @@ export function applyProposal(vaultRoot: string, proposal: Proposal | null | und
         return { ok: false, code: STALE, error: staleProposalError(resolved.rel, '文件已被修改') };
       }
       atomicWrite(resolved.abs, proposal.content || '');
+      if (sha256Hex(readBack(resolved.abs)) !== sha256Hex(Buffer.from(proposal.content || '', 'utf8'))) return verifyFailed(resolved.rel);
       return { ok: true, applied: proposal };
     }
     if (proposal.kind === 'move') {
@@ -326,8 +349,18 @@ export function applyProposal(vaultRoot: string, proposal: Proposal | null | und
       }
       const guard = assertInsideVault(vaultRoot, from.abs);
       if (!guard.ok) return guard;
+      // AL-12 (move): the destination must exist, the source must be gone, and
+      // the destination bytes must hash to the source bytes read just before the rename.
+      const sourceSha = sha256Hex(fs.readFileSync(from.abs));
       fs.mkdirSync(path.dirname(to.abs), { recursive: true });
       fs.renameSync(from.abs, to.abs);
+      let destSha: string | null = null;
+      try {
+        destSha = sha256Hex(readBack(to.abs));
+      } catch {
+        destSha = null;
+      }
+      if (destSha !== sourceSha || fs.existsSync(from.abs)) return verifyFailed(to.rel);
       return { ok: true, applied: proposal };
     }
     return { ok: false, error: `未知改动类型：${String((proposal as { kind: unknown }).kind)}` };
@@ -352,6 +385,9 @@ export class ProposalsService extends Service {
   private readonly _pending = new Map<string, Proposal>();
   private _writePause: WritePause | null = null;
   private readonly _rejectListeners = new Set<ApplyRejectedListener>();
+  /** AL-12: proposal id → the apply operation that already ran for it (replay returns it). */
+  private readonly _applyOps = new Map<string, ApplyResult & { applyOpId: string }>();
+  private _readBack: ApplyOptions['readBack'] = undefined;
 
   constructor(ctx: Context, _config: unknown = {}) {
     super(ctx, 'proposals');
@@ -388,6 +424,11 @@ export class ProposalsService extends Service {
   onApplyRejected(fn: ApplyRejectedListener): () => boolean {
     this._rejectListeners.add(fn);
     return () => this._rejectListeners.delete(fn);
+  }
+
+  /** @internal Tests only: replace the post-write read-back (simulate a disk that returns other bytes). */
+  setReadBackForTests(fn: ApplyOptions['readBack'] | null): void {
+    this._readBack = fn ?? undefined;
   }
 
   private _pausedFailure(): Failure {
@@ -531,6 +572,10 @@ export class ProposalsService extends Service {
     }
     const root = this.root();
     if (!root) return { ok: false, error: '未打开 vault' };
+    // AL-12 idempotency: replaying an Apply whose operation already ran returns
+    // the prior result — no second write, no second agent-log event.
+    const prior = this._applyOps.get(id);
+    if (prior) return prior;
     const proposal = this._pending.get(id);
     if (!proposal) {
       this._logApplyFailed(id, 'NOT_FOUND', origin);
@@ -539,14 +584,32 @@ export class ProposalsService extends Service {
     if (isBlockedByWritePause(proposal.initiator, this.isWritePaused())) {
       return this._rejectApply(id, 'WRITE_PAUSED', origin, this._pausedFailure().error);
     }
-    const result = applyProposal(root, proposal);
+    // Only the main process mints the operation id (renderer / agents cannot pass one).
+    const applyOpId = `apply_${crypto.randomUUID()}`;
+    const result = { ...applyProposal(root, proposal, { readBack: this._readBack }), applyOpId };
+    // Remember operations that wrote (applied, or wrote but failed verification).
+    // Refusals before any write (stale, paused, path / disk errors) may be retried.
+    if (result.ok || result.code === VERIFY_FAILED) this._rememberApplyOp(id, result);
     if (result.ok) {
       this._pending.delete(id);
       this._emitLog({ ...proposalLogFields(proposal), ev: 'proposal.applied', actor: 'user' }, root);
+    } else if (result.code === VERIFY_FAILED) {
+      // Not marked applied: the proposal stays pending (Discard still works).
+      this._emitLog({ ...proposalLogFields(proposal), ev: 'apply.verify_failed', actor: 'user', error: 'verify_failed' }, root);
     } else {
       this._logApplyFailed(id, result.code, origin);
     }
     return result;
+  }
+
+  private _rememberApplyOp(id: string, result: ApplyResult & { applyOpId: string }): void {
+    this._applyOps.set(id, result);
+    // Bounded: oldest operations are forgotten first.
+    while (this._applyOps.size > 500) {
+      const oldest = this._applyOps.keys().next().value;
+      if (oldest === undefined) break;
+      this._applyOps.delete(oldest);
+    }
   }
 
   /** Discard (reject) a pending proposal. Any origin may (it only removes); `actor` is logged. */

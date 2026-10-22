@@ -38,7 +38,7 @@ export function apply(ctx: Context, config: { onPropose?: ProposeHandler } = {})
       description:
         'Propose ONE change to a note in the Obsidian vault (the working directory). You cannot write files any other way: '
         + 'the filesystem is read-only to you. The change is shown to the user, who must press Apply before anything is written. '
-        + 'Paths are vault-relative. Never target .obsidian/, 00-系统/, or 90-附件/. create never overwrites; move never replaces an existing file. WeChat OA writes use vault paths under 10-卡片盒/公众号/ — never /workspace/content-team.',
+        + 'Paths are vault-relative. Never target .obsidian/, .git/, .trash/, .vault/, 00-系统/, or 90-附件/. create never overwrites; move never replaces an existing file. WeChat OA writes use vault paths under 10-卡片盒/公众号/ — never /workspace/content-team.',
       parameters: {
         kind: {
           type: 'string',

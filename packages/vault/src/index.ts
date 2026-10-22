@@ -16,13 +16,30 @@ import z from '@deepseek-ai/schemastery';
  * Top-level path segments that must never be written (or resolved for write).
  * `.vault` holds app-owned data (agent-log): agents may neither write nor read it.
  */
-export const FORBIDDEN_PREFIXES: readonly string[] = ['00-系统', '90-附件', '.obsidian', '.vault'];
+export const FORBIDDEN_PREFIXES: readonly string[] = ['00-系统', '90-附件', '.obsidian', '.vault', '.git', '.trash'];
+
+/**
+ * The forbidden top-level segment a vault-relative path falls under, or null.
+ * Matching ignores case (`.GIT/`, `.Trash/` on case-insensitive disks), `\\`
+ * separators, empty / `.` segments (`./.git/x`, `//.git`), inner `..` (`notes/../.git/x`)
+ * and the trailing dots / spaces Windows strips (`.git./x`). resolveVaultPath also
+ * refuses any `..` segment outright.
+ */
+export function forbiddenTop(relPath: unknown): string | null {
+  // Collapse `a/../.git/x` to `.git/x` first so traversal cannot hide the top segment.
+  const norm0 = path.posix.normalize(String(relPath ?? '').replace(/\\/g, '/')).replace(/^\/+/, '');
+  const top = norm0.split('/').filter((s) => s && s !== '.')[0];
+  if (top === undefined || top === '..') return null;
+  const norm = top.replace(/[. ]+$/, '').toLowerCase();
+  return FORBIDDEN_PREFIXES.find((f) => f.toLowerCase() === norm) ?? null;
+}
 
 export type PathResult = { ok: true; abs: string; rel: string } | { ok: false; error: string };
 
 /**
  * Resolve a vault-relative path and ensure it stays inside the vault.
- * Rejects absolute paths, `..`, symlinks that escape, `.obsidian/`, `00-系统/`, `90-附件/`, and `.vault/`.
+ * Rejects absolute paths, `..`, symlinks that escape, and every FORBIDDEN_PREFIXES top
+ * segment (`00-系统/`, `90-附件/`, `.obsidian/`, `.vault/`, `.git/`, `.trash/`; case-insensitive).
  * Always runs realpath on the vault root and on every existing path component.
  * @returns {{ ok: true, abs: string, rel: string } | { ok: false, error: string }}
  */
@@ -40,8 +57,8 @@ export function resolveVaultPath(vaultRoot: unknown, relPath: unknown): PathResu
   if (raw.split('/').some((p) => p === '..')) {
     return { ok: false, error: '禁止 .. 穿越' };
   }
-  const top = raw.split('/').filter(Boolean)[0];
-  if (top !== undefined && FORBIDDEN_PREFIXES.includes(top)) {
+  const top = forbiddenTop(raw);
+  if (top !== null) {
     return { ok: false, error: `禁止写入 ${top}/` };
   }
   const root = path.resolve(vaultRoot);
@@ -56,8 +73,8 @@ export function resolveVaultPath(vaultRoot: unknown, relPath: unknown): PathResu
 }
 
 export function isReadableRel(relPath: unknown): boolean {
-  const top = String(relPath || '').replace(/\\/g, '/').split('/').filter(Boolean)[0];
-  return top !== '00-系统' && top !== '90-附件' && top !== '.obsidian' && top !== '.vault';
+  if (String(relPath ?? '').replace(/\\/g, '/').split('/').some((seg) => seg === '..')) return false;
+  return forbiddenTop(relPath) === null;
 }
 
 /**

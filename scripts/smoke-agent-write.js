@@ -156,6 +156,17 @@ function assert(cond, msg) {
     const r = resolveVaultPath(vault, bad);
     assert(!r.ok, `should reject ${bad}`);
   }
+  // AL-11: .git/ and .trash/ refused like .obsidian/ (case variants, `..`, backslashes)
+  fs.mkdirSync(path.join(vault, '.git'), { recursive: true });
+  fs.writeFileSync(path.join(vault, '.git', 'config'), '[core]\n');
+  for (const bad of ['.git/config', '.GIT/config', '.Trash/x.md', '.trash/x.md', 'notes/../.git/config', '.git\\config', './.git/HEAD']) {
+    assert(!resolveVaultPath(vault, bad).ok, `AL-11: resolveVaultPath rejects ${bad}`);
+    assert(!proposeCreate(vault, bad, 'x', 'bad').ok, `AL-11: propose create rejects ${bad}`);
+  }
+  assert(!proposeEdit(vault, '.git/config', '[core]\nhooksPath=/tmp\n', 'bad').ok, 'AL-11: propose edit .git/config rejected');
+  assert(!proposeMove(vault, '02-项目/个人项目/smoke-note.md', '.Trash/smoke-note.md', 'bad').ok, 'AL-11: move into .Trash/ rejected');
+  assert(!proposeMove(vault, '.git/config', '10-卡片盒/config.md', 'bad').ok, 'AL-11: move out of .git/ rejected');
+  fs.rmSync(path.join(vault, '.git'), { recursive: true, force: true });
   assert(!proposeCreate(vault, '00-系统/hack.md', 'x', 'bad').ok, 'reject 00-系统');
   assert(!proposeCreate(vault, '90-附件/公众号/layout/x.html', 'x', 'bad').ok, 'reject 90-附件');
   assert(
@@ -464,7 +475,22 @@ function assert(cond, msg) {
     const [cardP] = proposals.stashManyStored(cardRes.proposals, { source: 'skill:makeCard' });
     const advP = proposals.create('10-卡片盒/adv-marker.md', `# ${MARK}\n${FAKE_KEY}\n`, `summary ${MARK}`, { source: 'agent-advanced:vault_propose_change' });
     assert(sortP && cardP && advP.ok, 'AL-3: default-mode and advanced proposals stored');
-    assert(proposals.apply(cardP.id, UI).ok, 'AL-1: card applied by a user click');
+    const cardApply = proposals.apply(cardP.id, UI);
+    assert(cardApply.ok && /^apply_[0-9a-f-]{36}$/.test(cardApply.applyOpId || ''), 'AL-1/AL-12: card applied by a user click; main minted an apply op id');
+    // AL-12 idempotency: replaying the same Apply returns the prior result (no write, no event).
+    const cardAbs = path.join(flowVault, ...cardP.path.split('/'));
+    fs.appendFileSync(cardAbs, 'user edit after apply\n');
+    const replay = proposals.apply(cardP.id, UI);
+    assert(replay.ok && replay.applyOpId === cardApply.applyOpId && fs.readFileSync(cardAbs, 'utf8').endsWith('user edit after apply\n'), 'AL-12: replay returns prior result, no second write');
+    // AL-12 verify: a read-back that does not match → VERIFY_FAILED, still pending, logged once.
+    const vp = proposals.create('10-卡片盒/verify.md', 'verify me\n', 'v', { source: 'skill:makeCard' });
+    proposals.setReadBackForTests((abs) => Buffer.concat([fs.readFileSync(abs), Buffer.from('!')]));
+    const vr = proposals.apply(vp.proposal.id, UI);
+    const vr2 = proposals.apply(vp.proposal.id, UI);
+    proposals.setReadBackForTests(null);
+    assert(!vr.ok && vr.code === 'VERIFY_FAILED' && /写入校验失败/.test(vr.error) && proposals.get(vp.proposal.id), 'AL-12: VERIFY_FAILED surfaced; proposal not marked applied');
+    assert(vr2 === vr || (vr2.applyOpId === vr.applyOpId && vr2.code === 'VERIFY_FAILED'), 'AL-12: replay of the failed op returns the prior result');
+    assert(proposals.discard(vp.proposal.id, UI).ok, 'AL-12: verify-failed proposal can be discarded');
     assert(proposals.discard(sortP.id, UI).ok, 'AL-1: sort proposal discarded');
     // AL-5 end-to-end: the log location breaks, Apply still succeeds unchanged.
     const p5 = proposals.create('10-卡片盒/al5.md', 'al5\n', 'al5', { source: 'skill:makeCard' });
@@ -484,6 +510,8 @@ function assert(cond, msg) {
     assert(has('proposal.created', 'skill:sortInbox') && has('proposal.created', 'skill:makeCard') && has('proposal.created', 'agent-advanced:vault_propose_change'), 'AL-3: created events carry origin (default sort/card + advanced) and initiator');
     assert(has('proposal.applied', 'skill:makeCard') && has('proposal.rejected', 'skill:sortInbox'), 'AL-1: applied + rejected logged');
     assert(has('proposal.expired', 'agent-advanced:vault_propose_change'), 'AL-3: pending proposal expired on vault switch');
+    assert(recs.filter((r) => r.ev === 'apply.verify_failed').length === 1 && has('apply.verify_failed', 'skill:makeCard'), 'AL-12: exactly one apply.verify_failed event');
+    assert(recs.filter((r) => r.ev === 'proposal.applied' && r.id === cardP.id).length === 1, 'AL-12: replay logged no duplicate applied event');
     const applied = recs.find((r) => r.ev === 'proposal.applied');
     assert(applied && /^[0-9a-f]{64}$/.test(applied.afterSha256 || '') && applied.actor === 'user', 'AL-1: applied has afterSha256 + actor user');
     assert(recs.every((r) => r.initiator === 'agent'), 'AL-1: model-driven proposals stamped initiator=agent');
