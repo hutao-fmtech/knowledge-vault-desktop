@@ -18,10 +18,13 @@ export function sha256Hex(data: Buffer | string): string {
   return crypto.createHash('sha256').update(data).digest('hex');
 }
 
-/** User-facing message when the target changed between propose and Apply. */
+/** User-facing message when the target changed between propose and Apply (AL-0 / PR-0). */
 export function staleProposalError(rel: string, detail: string): string {
-  return `${detail}：${rel}。拟改动生成后文件已变化，为避免覆盖，已拒绝 Apply（未写入）。请重新生成拟改动。`;
+  return `文件已被改动，请重新生成建议（${detail}：${rel}）。为避免覆盖，已拒绝 Apply，磁盘未改动。`;
 }
+
+/** Failure code for a stale proposal (agent-log will record it as `error: stale`). */
+export const STALE = 'STALE';
 
 function nextId(): string {
   _seq += 1;
@@ -41,7 +44,7 @@ export interface Proposal {
   summary: string;
 }
 
-export type Failure = { ok: false; error: string };
+export type Failure = { ok: false; error: string; code?: string };
 export type ProposeResult = { ok: true; proposal: Proposal } | Failure;
 export type ApplyResult = { ok: true; applied: Proposal } | Failure;
 
@@ -221,7 +224,7 @@ export function applyProposal(vaultRoot: string, proposal: Proposal | null | und
       const resolved = resolveVaultPath(vaultRoot, proposal.path);
       if (!resolved.ok) return resolved;
       if (fs.existsSync(resolved.abs)) {
-        return { ok: false, error: staleProposalError(resolved.rel, '目标已存在') };
+        return { ok: false, code: STALE, error: staleProposalError(resolved.rel, '目标已存在') };
       }
       atomicWrite(resolved.abs, proposal.content || '');
       return { ok: true, applied: proposal };
@@ -230,7 +233,7 @@ export function applyProposal(vaultRoot: string, proposal: Proposal | null | und
       const resolved = resolveVaultPath(vaultRoot, proposal.path);
       if (!resolved.ok) return resolved;
       if (!fs.existsSync(resolved.abs)) {
-        return { ok: false, error: staleProposalError(resolved.rel, '文件已不存在') };
+        return { ok: false, code: STALE, error: staleProposalError(resolved.rel, '文件已不存在') };
       }
       // Stale guard: the file must still be byte-identical to what was reviewed.
       // Fall back to hashing `before` for proposals built without beforeSha256;
@@ -238,7 +241,7 @@ export function applyProposal(vaultRoot: string, proposal: Proposal | null | und
       const expected =
         proposal.beforeSha256 ?? (proposal.before != null ? sha256Hex(Buffer.from(proposal.before, 'utf8')) : null);
       if (!expected || sha256Hex(fs.readFileSync(resolved.abs)) !== expected) {
-        return { ok: false, error: staleProposalError(resolved.rel, '文件已被修改') };
+        return { ok: false, code: STALE, error: staleProposalError(resolved.rel, '文件已被修改') };
       }
       atomicWrite(resolved.abs, proposal.content || '');
       return { ok: true, applied: proposal };

@@ -86,7 +86,10 @@ test('stale-guard: edit rejected when file was modified after propose; disk unto
   fs.writeFileSync(abs, 'v1 + user change\n', 'utf8');
   const res = applyProposal(vault, p.ok ? p.proposal : null);
   assert.equal(res.ok, false);
-  if (!res.ok) assert.match(res.error, /文件已被修改.*请重新生成拟改动/);
+  if (!res.ok) {
+    assert.equal(res.code, 'STALE');
+    assert.match(res.error, /^文件已被改动，请重新生成建议（文件已被修改/);
+  }
   assert.equal(fs.readFileSync(abs, 'utf8'), 'v1 + user change\n');
 });
 
@@ -97,7 +100,10 @@ test('stale-guard: edit rejected when file was deleted after propose; nothing re
   fs.unlinkSync(abs);
   const res = applyProposal(vault, p.ok ? p.proposal : null);
   assert.equal(res.ok, false);
-  if (!res.ok) assert.match(res.error, /文件已不存在.*请重新生成拟改动/);
+  if (!res.ok) {
+    assert.equal(res.code, 'STALE');
+    assert.match(res.error, /^文件已被改动，请重新生成建议（文件已不存在/);
+  }
   assert.equal(fs.existsSync(abs), false);
 });
 
@@ -109,7 +115,10 @@ test('stale-guard: create rejected when target appeared after propose; existing 
   fs.writeFileSync(target, 'user wrote this first\n', 'utf8');
   const res = applyProposal(vault, p.ok ? p.proposal : null);
   assert.equal(res.ok, false);
-  if (!res.ok) assert.match(res.error, /目标已存在.*请重新生成拟改动/);
+  if (!res.ok) {
+    assert.equal(res.code, 'STALE');
+    assert.match(res.error, /^文件已被改动，请重新生成建议（目标已存在/);
+  }
   assert.equal(fs.readFileSync(target, 'utf8'), 'user wrote this first\n');
 });
 
