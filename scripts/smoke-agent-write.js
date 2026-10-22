@@ -331,6 +331,33 @@ function assert(cond, msg) {
   const pure = searchVault(vault, 'SECRET_SYS', 10);
   assert(pure.ok && pure.hits.length === 0, 'search.js excludes 00-系统');
 
+  // --- agent-log PR-1: append-only log under .vault/ + .vault guard (AL-1/2/4/5/8) ---
+  {
+    const { createAgentLog, sha256Hex: logSha } = await import('../packages/agent-log/lib/index.js');
+    const { resolveVaultPath: rvp, isReadableRel: readable } = await import('../packages/vault/lib/index.js');
+    const MARK = 'AGENTLOG_SMOKE_MARKER_42';
+    const warns = [];
+    const alog = createAgentLog({ getVaultRoot: () => vault, deviceId: 'smoke', app: '0.0.0-smoke', utcOffsetMinutes: 480, onWarn: (m) => warns.push(m) });
+    const rec = alog.append({ ev: 'proposal.created', id: 'chg_smoke', kind: 'edit', path: '01-收件箱\\smoke.md', origin: 'skill:makeCard', actor: 'agent', beforeSha256: logSha(MARK), content: MARK, summary: MARK, prompt: MARK });
+    assert(rec && rec.path === '01-收件箱/smoke.md', 'AL-8: log stores vault paths with /');
+    const day = rec.ts.slice(0, 10);
+    const logFile = path.join(vault, '.vault', 'agent-log', `${day}.smoke.jsonl`);
+    assert(fs.existsSync(logFile) && /\+08:00$/.test(rec.ts), 'AL-1: day file <vault>/.vault/agent-log/<day>.<device>.jsonl, ts +08:00');
+    assert(alog.append({ ev: 'proposal.apply_failed', id: 'chg_smoke', error: 'stale', stale: true }), 'AL-1: apply_failed with error code appended');
+    assert(alog.readDay(day).length === 2, 'AL-1: read back both events');
+    assert(!fs.readFileSync(logFile, 'utf8').includes(MARK), 'AL-2: no note content / summary / prompt in the log');
+    assert(!rvp(vault, '.vault/agent-log/x.jsonl').ok && !readable(`.vault/agent-log/${day}.smoke.jsonl`), 'AL-4: agents can neither write nor read .vault/');
+    fs.appendFileSync(logFile, `${MARK}\n`);
+    assert(searchVault(vault, MARK, 10).hits.length === 0, 'AL-4: search never indexes .vault/');
+    let threw = false;
+    fs.writeFileSync(path.join(vault, 'not-a-dir'), '');
+    let failed = 'unset';
+    try { failed = createAgentLog({ getVaultRoot: () => path.join(vault, 'not-a-dir'), deviceId: 'x', onWarn: () => {} }).append({ ev: 'proposal.applied' }); } catch { threw = true; }
+    fs.rmSync(path.join(vault, 'not-a-dir'));
+    assert(!threw && failed === null, 'AL-5: a failing log write never throws into the caller');
+    fs.rmSync(path.join(vault, '.vault'), { recursive: true, force: true });
+  }
+
   // --- PR-5: kvd-proposals clears on vault switch (G4) + ipc bridge ---
   const proposals = ctx.get('proposals');
   const ipc = ctx.get('ipc');

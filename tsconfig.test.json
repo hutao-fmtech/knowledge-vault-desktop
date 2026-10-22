@@ -7,6 +7,9 @@
     "noEmit": true,
     "rootDir": ".",
     "paths": {
+      "@kvd/agent-log": [
+        "./packages/agent-log/src/index.ts"
+      ],
       "@kvd/advanced/controller": [
         "./packages/advanced/src/controller.ts"
       ],

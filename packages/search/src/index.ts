@@ -28,7 +28,7 @@ declare module '@deepseek-ai/cordis' {
 
 // ---- pure search helpers (folded from src/agent/search.js) ----
 /** Directories excluded from search (top-level). */
-export const SEARCH_EXCLUDED_TOP: readonly string[] = ['00-系统', '90-附件', '.obsidian'];
+export const SEARCH_EXCLUDED_TOP: readonly string[] = ['00-系统', '90-附件', '.obsidian', '.vault'];
 
 function walkMd(dir: string, vaultRoot: string, out: { abs: string; rel: string }[]): void {
   let entries: fs.Dirent[];

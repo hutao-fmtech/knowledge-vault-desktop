@@ -12,14 +12,17 @@ import { Context, Service } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
 
 // ---- pure path helpers (folded from src/agent/paths.js) ----
-/** Top-level path segments that must never be written (or resolved for write). */
-export const FORBIDDEN_PREFIXES: readonly string[] = ['00-系统', '90-附件', '.obsidian'];
+/**
+ * Top-level path segments that must never be written (or resolved for write).
+ * `.vault` holds app-owned data (agent-log): agents may neither write nor read it.
+ */
+export const FORBIDDEN_PREFIXES: readonly string[] = ['00-系统', '90-附件', '.obsidian', '.vault'];
 
 export type PathResult = { ok: true; abs: string; rel: string } | { ok: false; error: string };
 
 /**
  * Resolve a vault-relative path and ensure it stays inside the vault.
- * Rejects absolute paths, `..`, symlinks that escape, `.obsidian/`, `00-系统/`, and `90-附件/`.
+ * Rejects absolute paths, `..`, symlinks that escape, `.obsidian/`, `00-系统/`, `90-附件/`, and `.vault/`.
  * Always runs realpath on the vault root and on every existing path component.
  * @returns {{ ok: true, abs: string, rel: string } | { ok: false, error: string }}
  */
@@ -54,7 +57,7 @@ export function resolveVaultPath(vaultRoot: unknown, relPath: unknown): PathResu
 
 export function isReadableRel(relPath: unknown): boolean {
   const top = String(relPath || '').replace(/\\/g, '/').split('/').filter(Boolean)[0];
-  return top !== '00-系统' && top !== '90-附件' && top !== '.obsidian';
+  return top !== '00-系统' && top !== '90-附件' && top !== '.obsidian' && top !== '.vault';
 }
 
 /**

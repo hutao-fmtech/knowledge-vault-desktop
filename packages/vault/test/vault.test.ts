@@ -27,11 +27,19 @@ test('resolveVaultPath keeps paths inside the vault', () => {
 });
 
 test('never touches .obsidian/ or 00-系统/ or 90-附件/', () => {
-  assert.deepEqual(FORBIDDEN_PREFIXES, ['00-系统', '90-附件', '.obsidian']);
+  assert.deepEqual(FORBIDDEN_PREFIXES, ['00-系统', '90-附件', '.obsidian', '.vault']);
   assert.equal(isReadableRel('.obsidian/x'), false);
   assert.equal(isReadableRel('00-系统/x'), false);
   assert.equal(isReadableRel('90-附件/x'), false);
   assert.equal(isReadableRel('03-领域/x.md'), true);
+  // AL-4: the agent-log dir is neither readable nor writable for agents.
+  for (const p of ['.vault/agent-log/2026-10-22.dev.jsonl', '.vault\\agent-log\\x.jsonl', '.vault']) {
+    assert.equal(isReadableRel(p), false, p);
+    assert.equal(resolveVaultPath(vault, p).ok, false, p);
+  }
+  assert.equal(isReadableRel('00-系统/agent-日报/2026-10-22.md'), false);
+  assert.equal(resolveVaultPath(vault, '00-系统/agent-日报/2026-10-22.md').ok, false);
+  assert.equal(isReadableRel('notes/.vault/x.md'), true, 'only the top-level .vault is reserved');
   assert.equal(resolveVaultPath(vault, '90-附件/公众号/layout/x.html').ok, false);
 });
 

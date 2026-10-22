@@ -1,0 +1,25 @@
+{
+  "name": "@kvd/agent-log",
+  "version": "0.2.2",
+  "private": true,
+  "type": "module",
+  "description": "kvd-agent-log: append-only proposal-lifecycle audit log at <vault>/.vault/agent-log (paths + hashes only, never note content).",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    }
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "lib/**/*.d.ts.map"
+  ],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "4.1.8"
+  }
+}
