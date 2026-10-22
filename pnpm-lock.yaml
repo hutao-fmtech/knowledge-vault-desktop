@@ -306,6 +306,12 @@ importers:
         specifier: 4.1.8
         version: 4.1.8(@types/node@26.6.5)(vite@8.3.4(@types/node@26.6.5)(yaml@2.9.1))
 
+  packages/agent-log:
+    devDependencies:
+      vitest:
+        specifier: 4.1.8
+        version: 4.1.8(@types/node@26.6.5)(vite@8.3.4(@types/node@26.6.5)(yaml@2.9.1))
+
   packages/clipper:
     dependencies:
       '@kvd/vault':

@@ -13,7 +13,7 @@ import {
 } from '../src/index.js';
 
 test('search excludes system / attachments / .obsidian and finds notes', () => {
-  assert.deepEqual(SEARCH_EXCLUDED_TOP, ['00-系统', '90-附件', '.obsidian']);
+  assert.deepEqual(SEARCH_EXCLUDED_TOP, ['00-系统', '90-附件', '.obsidian', '.vault']);
   const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'kvd-search-'));
   fs.mkdirSync(path.join(vault, '03-领域'), { recursive: true });
   fs.mkdirSync(path.join(vault, '00-系统'), { recursive: true });
