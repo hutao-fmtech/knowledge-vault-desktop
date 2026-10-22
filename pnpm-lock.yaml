@@ -225,6 +225,9 @@ importers:
       '@kvd/advanced':
         specifier: workspace:*
         version: link:../../packages/advanced
+      '@kvd/agent-log':
+        specifier: workspace:*
+        version: link:../../packages/agent-log
       '@kvd/ipc-bridge':
         specifier: workspace:*
         version: link:../../packages/ipc-bridge
@@ -307,6 +310,19 @@ importers:
         version: 4.1.8(@types/node@26.6.5)(vite@8.3.4(@types/node@26.6.5)(yaml@2.9.1))
 
   packages/agent-log:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.4
+        version: 4.0.4(@deepseek-ai/cordis-plugin-include@1.0.9)(@deepseek-ai/cordis-plugin-loader@1.0.5)
+      '@deepseek-ai/schemastery':
+        specifier: 3.18.4
+        version: 3.18.4
+      '@kvd/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@kvd/vault':
+        specifier: workspace:*
+        version: link:../vault
     devDependencies:
       vitest:
         specifier: 4.1.8
@@ -416,6 +432,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: 3.18.4
         version: 3.18.4
+      '@kvd/agent-log':
+        specifier: workspace:*
+        version: link:../agent-log
       '@kvd/ipc-bridge':
         specifier: workspace:*
         version: link:../ipc-bridge

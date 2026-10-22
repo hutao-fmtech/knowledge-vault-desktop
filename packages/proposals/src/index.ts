@@ -8,6 +8,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Context, Service } from '@deepseek-ai/cordis';
 import type {} from '@kvd/ipc-bridge';
+import type {} from '@kvd/agent-log/plugin';
+import type { AgentLogInput } from '@kvd/agent-log';
 import z from '@deepseek-ai/schemastery';
 import { resolveVaultPath, assertInsideVault } from '@kvd/vault';
 import { LOCAL_UI_ORIGIN, WRITE_PAUSED_MSG, describeOrigin, initiatorFromOrigin, isBlockedByWritePause, isLocalUiOrigin } from './write-pause.js';
@@ -55,6 +57,49 @@ export interface Proposal {
    * The agent-log track records it too.
    */
   readonly initiator?: ProposalInitiator;
+  /**
+   * Which skill / tool produced it (agent-log `origin`, e.g. `skill:makeCard`,
+   * `agent-advanced:vault_propose_change`). Stamped with `initiator`; frozen.
+   */
+  readonly source?: string;
+}
+
+/** Options for stash / create / edit / move. */
+export interface StashOptions {
+  origin?: ActionOrigin | null;
+  /** Skill / tool source recorded on the proposal and in the agent-log. */
+  source?: string;
+}
+
+const SOURCE_RE = /^[a-z][a-z0-9-]{0,31}(?::[A-Za-z0-9_.-]{1,48})?$/;
+
+/** Map an Apply failure code to the short agent-log error code. */
+export function logErrorCode(code: string | undefined): string {
+  if (code === STALE) return 'stale';
+  if (code === 'WRITE_PAUSED') return 'write_paused';
+  if (code === 'APPLY_FORBIDDEN') return 'apply_forbidden';
+  if (code === 'NOT_FOUND') return 'not_found';
+  return 'apply_error';
+}
+
+/**
+ * Agent-log fields for a proposal: paths, kind, initiator/source and sha256
+ * hashes only — never content / before / summary.
+ */
+export function proposalLogFields(p: Proposal): Omit<AgentLogInput, 'ev'> {
+  const out: Omit<AgentLogInput, 'ev'> = { id: p.id, kind: p.kind };
+  if (p.path) out.path = p.path;
+  if (p.from) out.from = p.from;
+  if (p.to) out.to = p.to;
+  if (p.initiator) out.initiator = p.initiator;
+  if (p.source) out.origin = p.source;
+  if (p.beforeSha256) out.beforeSha256 = p.beforeSha256;
+  if (p.kind !== 'move') {
+    const body = Buffer.from(p.content ?? '', 'utf8');
+    out.afterSha256 = sha256Hex(body);
+    out.bytes = body.length;
+  }
+  return out;
 }
 
 export type Failure = { ok: false; error: string; code?: string };
@@ -311,8 +356,9 @@ export class ProposalsService extends Service {
   constructor(ctx: Context, _config: unknown = {}) {
     super(ctx, 'proposals');
 
-    ctx.on('kvd/vault-changed', () => {
-      this._pending.clear();
+    ctx.on('kvd/vault-changed', (e) => {
+      // Pending proposals of the vault being left are logged as expired there.
+      this._expireAll(e ? e.previous : null);
     });
 
     // IPC routes live on this fiber; dispose unregisters them (kvd-ipc-bridge).
@@ -323,7 +369,9 @@ export class ProposalsService extends Service {
       ipc.handle('agent-apply', (e, id) =>
         this.apply(String(id), ipc.isLocalSender(e) ? LOCAL_UI_ORIGIN : { kind: 'remote', channel: 'ipc' }),
       );
-      ipc.handle('agent-discard', (_e, id) => this.discard(String(id)));
+      ipc.handle('agent-discard', (e, id) =>
+        this.discard(String(id), ipc.isLocalSender(e) ? LOCAL_UI_ORIGIN : { kind: 'remote', channel: 'ipc' }),
+      );
     }
   }
 
@@ -351,7 +399,38 @@ export class ProposalsService extends Service {
     for (const fn of this._rejectListeners) {
       try { fn(rejection); } catch { /* logging never changes the outcome */ }
     }
+    this._logApplyFailed(id, code, origin);
     return { ok: false, code, error };
+  }
+
+  /**
+   * Emit one agent-log event (`kvd/agent-log`, handled by kvd-agent-log when
+   * mounted). Best effort: a failing / missing logger never changes a result.
+   */
+  private _emitLog(record: AgentLogInput, root: string | null = this.root()): void {
+    if (!root) return;
+    try {
+      this.ctx.emit('kvd/agent-log', { root, record });
+    } catch {
+      /* AL-5: logging never changes the outcome */
+    }
+  }
+
+  private _logApplyFailed(id: string, code: string | undefined, origin: ActionOrigin | null | undefined): void {
+    const p = this._pending.get(id);
+    this._emitLog({
+      ...(p ? proposalLogFields(p) : { id }),
+      ev: 'proposal.apply_failed',
+      actor: initiatorFromOrigin(origin),
+      error: logErrorCode(code),
+      ...(code === STALE ? { stale: true } : {}),
+    });
+  }
+
+  private _expireAll(root: string | null | undefined): void {
+    const expired = [...this._pending.values()];
+    this._pending.clear();
+    for (const p of expired) this._emitLog({ ...proposalLogFields(p), ev: 'proposal.expired', actor: 'system' }, root ?? null);
   }
 
   root(): string | null {
@@ -365,31 +444,34 @@ export class ProposalsService extends Service {
    * agent-initiated proposal is dropped (null). An id that is already pending
    * is never replaced (no re-stamping / content swap of an existing proposal).
    */
-  private _store(proposal: Proposal | null | undefined, origin: ActionOrigin | null | undefined): Proposal | null {
+  private _store(proposal: Proposal | null | undefined, opts: StashOptions = {}): Proposal | null {
     if (!proposal || !proposal.id) return null;
-    const initiator = initiatorFromOrigin(origin);
+    const initiator = initiatorFromOrigin(opts.origin);
     if (isBlockedByWritePause(initiator, this.isWritePaused())) return null;
     const existing = this._pending.get(proposal.id);
     if (existing) return existing.initiator === initiator ? existing : null;
-    const stored = Object.freeze({ ...proposal, initiator }) as Proposal;
+    const { source: _ignored, ...rest } = proposal;
+    const source = typeof opts.source === 'string' && SOURCE_RE.test(opts.source) ? opts.source : initiator === 'user' ? 'desktop' : 'agent';
+    const stored = Object.freeze({ ...rest, initiator, source }) as Proposal;
     this._pending.set(stored.id, stored);
+    this._emitLog({ ...proposalLogFields(stored), ev: 'proposal.created', actor: initiator });
     return stored;
   }
 
   /** Stash one proposal. Without a verified desktop-click `origin` it is agent-initiated. */
-  stash(proposal: Proposal | null | undefined, opts: { origin?: ActionOrigin | null } = {}): Proposal | null {
-    return this._store(proposal, opts.origin);
+  stash(proposal: Proposal | null | undefined, opts: StashOptions = {}): Proposal | null {
+    return this._store(proposal, opts);
   }
 
   /** Stash several; returns the ids actually stored. See `stashManyStored` for the stamped copies. */
-  stashMany(proposals: readonly Proposal[] | null | undefined, opts: { origin?: ActionOrigin | null } = {}): string[] {
+  stashMany(proposals: readonly Proposal[] | null | undefined, opts: StashOptions = {}): string[] {
     return this.stashManyStored(proposals, opts).map((p) => p.id);
   }
 
-  stashManyStored(proposals: readonly Proposal[] | null | undefined, opts: { origin?: ActionOrigin | null } = {}): Proposal[] {
+  stashManyStored(proposals: readonly Proposal[] | null | undefined, opts: StashOptions = {}): Proposal[] {
     const out: Proposal[] = [];
     for (const p of proposals || []) {
-      const stored = this._store(p, opts.origin);
+      const stored = this._store(p, opts);
       if (stored) out.push(stored);
     }
     return out;
@@ -408,28 +490,28 @@ export class ProposalsService extends Service {
   }
 
   clear(): void {
-    this._pending.clear();
+    this._expireAll(this.root());
   }
 
-  create(relPath: unknown, content: unknown, summary?: string, opts: { origin?: ActionOrigin | null } = {}): ProposeResult {
-    return this._propose(() => proposeCreate(this.root()!, relPath, content, summary), opts.origin);
+  create(relPath: unknown, content: unknown, summary?: string, opts: StashOptions = {}): ProposeResult {
+    return this._propose(() => proposeCreate(this.root()!, relPath, content, summary), opts);
   }
 
-  edit(relPath: unknown, content: unknown, summary?: string, opts: { origin?: ActionOrigin | null } = {}): ProposeResult {
-    return this._propose(() => proposeEdit(this.root()!, relPath, content, summary), opts.origin);
+  edit(relPath: unknown, content: unknown, summary?: string, opts: StashOptions = {}): ProposeResult {
+    return this._propose(() => proposeEdit(this.root()!, relPath, content, summary), opts);
   }
 
-  move(fromRel: unknown, toRel: unknown, summary?: string, opts: { origin?: ActionOrigin | null } = {}): ProposeResult {
-    return this._propose(() => proposeMove(this.root()!, fromRel, toRel, summary), opts.origin);
+  move(fromRel: unknown, toRel: unknown, summary?: string, opts: StashOptions = {}): ProposeResult {
+    return this._propose(() => proposeMove(this.root()!, fromRel, toRel, summary), opts);
   }
 
   /** Shared create/edit/move path: pause guard by initiator, then stamp + store. */
-  private _propose(build: () => ProposeResult, origin: ActionOrigin | null | undefined): ProposeResult {
-    if (isBlockedByWritePause(initiatorFromOrigin(origin), this.isWritePaused())) return this._pausedFailure();
+  private _propose(build: () => ProposeResult, opts: StashOptions): ProposeResult {
+    if (isBlockedByWritePause(initiatorFromOrigin(opts.origin), this.isWritePaused())) return this._pausedFailure();
     if (!this.root()) return { ok: false, error: '未打开 vault' };
     const res = build();
     if (!res.ok) return res;
-    const stored = this._store(res.proposal, origin);
+    const stored = this._store(res.proposal, opts);
     if (!stored) return this._pausedFailure();
     return { ok: true, proposal: stored };
   }
@@ -450,19 +532,29 @@ export class ProposalsService extends Service {
     const root = this.root();
     if (!root) return { ok: false, error: '未打开 vault' };
     const proposal = this._pending.get(id);
-    if (!proposal) return { ok: false, error: '找不到拟改动（可能已处理）' };
+    if (!proposal) {
+      this._logApplyFailed(id, 'NOT_FOUND', origin);
+      return { ok: false, error: '找不到拟改动（可能已处理）' };
+    }
     if (isBlockedByWritePause(proposal.initiator, this.isWritePaused())) {
       return this._rejectApply(id, 'WRITE_PAUSED', origin, this._pausedFailure().error);
     }
     const result = applyProposal(root, proposal);
-    if (result.ok) this._pending.delete(id);
+    if (result.ok) {
+      this._pending.delete(id);
+      this._emitLog({ ...proposalLogFields(proposal), ev: 'proposal.applied', actor: 'user' }, root);
+    } else {
+      this._logApplyFailed(id, result.code, origin);
+    }
     return result;
   }
 
-  discard(id: string): ReturnType<typeof discardProposal> | Failure {
+  /** Discard (reject) a pending proposal. Any origin may (it only removes); `actor` is logged. */
+  discard(id: string, origin?: ActionOrigin | null): ReturnType<typeof discardProposal> | Failure {
     const proposal = this._pending.get(id);
     if (!proposal) return { ok: false, error: '找不到拟改动' };
     this._pending.delete(id);
+    this._emitLog({ ...proposalLogFields(proposal), ev: 'proposal.rejected', actor: initiatorFromOrigin(origin) });
     return discardProposal(proposal);
   }
 

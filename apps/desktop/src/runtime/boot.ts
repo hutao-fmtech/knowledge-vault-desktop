@@ -12,6 +12,7 @@ import type {} from '@deepseek-ai/dsh-credentials';
 import type {} from '@kvd/vault';
 import type {} from '@kvd/search';
 import type {} from '@kvd/proposals';
+import type {} from '@kvd/agent-log/plugin';
 import type {} from '@kvd/ipc-bridge';
 import type {} from '@kvd/skills';
 import { DEFAULT_ROWS, resolvePlugin, advancedRowsFor } from './composition.js';
@@ -229,6 +230,7 @@ export async function smokeMount() {
     hasVault: ctx.get('vault') !== undefined,
     hasVaultSearch: ctx.get('vaultSearch') !== undefined,
     hasProposals: ctx.get('proposals') !== undefined,
+    hasAgentLog: ctx.get('agentLog') !== undefined,
     hasIpc: ctx.get('ipc') !== undefined,
     hasSkills: ctx.get('kvdSkills') !== undefined,
     plugins: [...mountedDefaultIds],

@@ -12,7 +12,7 @@
  * Best effort: append / read / prune never throw into callers (AL-5); failures
  * are reported through `onWarn` and Apply results are never affected.
  *
- * Pure package (Node builtins only). Not mounted or wired into proposals yet.
+ * Core module: Node builtins only. The Cordis plugin that mounts it lives in ./plugin.ts.
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -49,6 +49,8 @@ export interface AgentLogRecord {
   to?: string;
   origin?: string;
   actor?: Actor;
+  /** Who initiated the proposal (spec R2.6 `initiator`), constant over its lifecycle. */
+  initiator?: 'agent' | 'user';
   beforeSha256?: string;
   afterSha256?: string;
   bytes?: number;
@@ -112,6 +114,7 @@ export function sanitizeRecord(input: AgentLogInput | null | undefined, ts: stri
   const origin = str(ORIGIN_RE, input.origin);
   if (origin) out.origin = origin;
   if (input.actor === 'user' || input.actor === 'agent' || input.actor === 'system') out.actor = input.actor;
+  if (input.initiator === 'agent' || input.initiator === 'user') out.initiator = input.initiator;
   for (const k of ['beforeSha256', 'afterSha256'] as const) {
     const h = typeof input[k] === 'string' ? (input[k] as string).toLowerCase() : undefined;
     if (h && SHA_RE.test(h)) out[k] = h;
