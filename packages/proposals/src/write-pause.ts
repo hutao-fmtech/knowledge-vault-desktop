@@ -30,6 +30,30 @@ export function describeOrigin(origin: ActionOrigin | null | undefined): string 
 
 export const WRITE_PAUSED_MSG = '写入已暂停';
 
+/**
+ * Who initiated a write (spec R2.6, 2026-10-22): the pause is judged by the
+ * initiator, not by whether the write goes through proposals.
+ *   'user'  — a human click in the desktop renderer, no model call
+ *             (W3「标记已发布」归档, layout HTML render, clipper #31).
+ *   'agent' — anything produced by the agent / model / tool layer / remote.
+ */
+export type ProposalInitiator = 'agent' | 'user';
+
+/**
+ * The ONLY way an initiator is derived. 'user' requires a verified local
+ * desktop-click origin (the main process classifies the main-window IPC
+ * sender); every other origin — none, agent, tool, remote, or a forged
+ * `initiator` field on a proposal object — is 'agent' (fail closed).
+ */
+export function initiatorFromOrigin(origin: ActionOrigin | null | undefined): ProposalInitiator {
+  return isLocalUiOrigin(origin) ? 'user' : 'agent';
+}
+
+/** R2.6: only agent-initiated writes are blocked by the pause; unknown counts as agent. */
+export function isBlockedByWritePause(initiator: ProposalInitiator | null | undefined, paused: boolean): boolean {
+  return paused && initiator !== 'user';
+}
+
 export interface WritePauseState {
   paused: boolean;
   pausedAt?: string;

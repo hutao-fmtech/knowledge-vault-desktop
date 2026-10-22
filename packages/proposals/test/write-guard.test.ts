@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Context, Service } from '@deepseek-ai/cordis';
 import IpcBridge from '@kvd/ipc-bridge';
-import ProposalsService, { LOCAL_UI_ORIGIN, createWritePause } from '../src/index.js';
+import ProposalsService, { LOCAL_UI_ORIGIN, createWritePause, initiatorFromOrigin, isBlockedByWritePause } from '../src/index.js';
 import type { ApplyRejection } from '../src/index.js';
 
 /** Minimal `vault` service (the real one also needs kvd-prefs; only getRoot matters here). */
@@ -158,4 +158,125 @@ test('AC-P4: agent / remote cannot lift the pause; local manual resume is immedi
   const c = proposals.create('10-卡片盒/after.md', 'ok\n');
   assert.ok(c.ok);
   assert.equal(proposals.apply(c.ok ? c.proposal.id : '', LOCAL_UI_ORIGIN).ok, true);
+});
+
+// ---- R2.6 (2026-10-22): pause is judged by WHO INITIATED ----
+
+const FORGED_ORIGINS = [
+  undefined,
+  { kind: 'agent', channel: 'dsh-agent' },
+  { kind: 'tool', channel: 'vault_propose_change' },
+  { kind: 'remote', channel: 'feishu' },
+] as const;
+
+test('R2.6: user-initiated proposal (desktop-click origin) is created and Applies while paused', async () => {
+  const { vault, proposals, pause } = await setup();
+  pause.pause({ kind: 'agent' });
+  const stored = proposals.stash(
+    { id: 'pub_edit', kind: 'edit', path: '10-卡片盒/n.md', before: 'v1\n', content: 'v1\npublished\n', summary: '标记已发布' },
+    { origin: LOCAL_UI_ORIGIN },
+  );
+  assert.equal(stored?.initiator, 'user');
+  const viaCreate = proposals.create('10-卡片盒/user.md', 'u\n', 'user create', { origin: LOCAL_UI_ORIGIN });
+  assert.equal(viaCreate.ok, true);
+  if (viaCreate.ok) assert.equal(viaCreate.proposal.initiator, 'user');
+  assert.equal(proposals.apply('pub_edit', LOCAL_UI_ORIGIN).ok, true);
+  assert.equal(fs.readFileSync(path.join(vault, '10-卡片盒', 'n.md'), 'utf8'), 'v1\npublished\n');
+  if (viaCreate.ok) assert.equal(proposals.apply(viaCreate.proposal.id, LOCAL_UI_ORIGIN).ok, true);
+  assert.equal(pause.isPaused(), true);
+});
+
+test('R2.6 / AC-P1: user-initiated proposal still needs a human desktop click to Apply (paused or not)', async () => {
+  const { vault, proposals, pause, rejected } = await setup();
+  const stored = proposals.stash(
+    { id: 'pub_c', kind: 'create', path: '10-卡片盒/pc.md', content: 'x', summary: 's' },
+    { origin: LOCAL_UI_ORIGIN },
+  );
+  assert.equal(stored?.initiator, 'user');
+  const before = tree(vault);
+  for (const paused of [false, true]) {
+    if (paused) pause.pause();
+    for (const origin of FORGED_ORIGINS) {
+      const r = proposals.apply('pub_c', origin);
+      assert.equal(r.ok, false);
+      if (!r.ok) assert.equal(r.code, 'APPLY_FORBIDDEN');
+    }
+  }
+  assert.deepEqual(tree(vault), before);
+  assert.ok(rejected.every((r) => r.code === 'APPLY_FORBIDDEN'));
+});
+
+test('R2.6: agent-initiated proposal is blocked while paused (creation and Apply)', async () => {
+  const { vault, proposals, pause } = await setup();
+  const queued = proposals.edit('10-卡片盒/n.md', 'agent v2\n', 'agent edit');
+  assert.equal(queued.ok, true);
+  if (queued.ok) assert.equal(queued.proposal.initiator, 'agent');
+  pause.pause();
+  const created = proposals.create('10-卡片盒/a.md', 'a', 'agent create');
+  assert.equal(created.ok, false);
+  if (!created.ok) assert.equal(created.code, 'WRITE_PAUSED');
+  assert.equal(proposals.stash({ id: 'skill_x', kind: 'create', path: '10-卡片盒/x.md', content: 'x', summary: 'x' }), null);
+  if (queued.ok) {
+    const r = proposals.apply(queued.proposal.id, LOCAL_UI_ORIGIN);
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.code, 'WRITE_PAUSED');
+  }
+  assert.equal(fs.readFileSync(path.join(vault, '10-卡片盒', 'n.md'), 'utf8'), 'v1\n');
+});
+
+test('R2.6 (CoS): agent / tool / remote cannot set or mutate initiator — forced to agent, immutable, still blocked while paused', async () => {
+  const { vault, proposals, pause } = await setup();
+  // 1. Forged `initiator: 'user'` on the object, with every non-desktop origin.
+  const ids: string[] = [];
+  FORGED_ORIGINS.forEach((origin, i) => {
+    const forged = { id: `forge_${i}`, kind: 'create', path: `10-卡片盒/f${i}.md`, content: 'f', summary: 'f', initiator: 'user' } as const;
+    const stored = proposals.stash(forged, { origin });
+    assert.equal(stored?.initiator, 'agent', `stash from ${origin?.kind ?? 'none'} → agent`);
+    ids.push(stored!.id);
+  });
+  const many = proposals.stashManyStored(
+    [{ id: 'forge_many', kind: 'create', path: '10-卡片盒/fm.md', content: 'm', summary: 'm', initiator: 'user' }],
+    { origin: { kind: 'tool' } },
+  );
+  assert.equal(many[0]?.initiator, 'agent');
+  ids.push('forge_many');
+  for (const origin of FORGED_ORIGINS) {
+    const c = proposals.create(`10-卡片盒/c-${origin?.kind ?? 'none'}.md`, 'c', 'c', { origin });
+    assert.equal(c.ok && c.proposal.initiator, 'agent');
+    if (c.ok) ids.push(c.proposal.id);
+  }
+  // 2. Mutating an existing proposal's initiator: frozen, and re-stash with the same id cannot re-stamp it.
+  const p = proposals.get('forge_0')!;
+  assert.ok(Object.isFrozen(p));
+  assert.throws(() => {
+    (p as { initiator?: string }).initiator = 'user';
+  }, TypeError);
+  assert.equal(proposals.get('forge_0')?.initiator, 'agent');
+  assert.equal(proposals.stash({ ...p, initiator: 'user' }, { origin: { kind: 'remote', channel: 'wecom' } })?.initiator, 'agent');
+  assert.equal(proposals.list().find((x) => x.id === 'forge_0')?.initiator, 'agent');
+  // Content swap of an existing id is refused as well.
+  proposals.stash({ ...p, content: 'swapped' });
+  assert.equal(proposals.get('forge_0')?.content, 'f');
+  // 3. All of them stay blocked while paused, even for a real desktop click.
+  pause.pause();
+  const before = tree(vault);
+  for (const id of ids) {
+    const r = proposals.apply(id, LOCAL_UI_ORIGIN);
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.code, 'WRITE_PAUSED');
+  }
+  assert.deepEqual(tree(vault), before);
+  // A desktop-click re-stash of an existing agent id cannot upgrade it to user either.
+  assert.equal(proposals.stash({ ...p, initiator: 'user' }, { origin: LOCAL_UI_ORIGIN }), null);
+  assert.equal(proposals.get('forge_0')?.initiator, 'agent');
+});
+
+test('R2.6: initiatorFromOrigin / isBlockedByWritePause (also used for layout HTML + publish in main)', () => {
+  assert.equal(initiatorFromOrigin(LOCAL_UI_ORIGIN), 'user');
+  for (const o of FORGED_ORIGINS) assert.equal(initiatorFromOrigin(o), 'agent');
+  assert.equal(initiatorFromOrigin(null), 'agent');
+  assert.equal(isBlockedByWritePause('user', true), false);
+  assert.equal(isBlockedByWritePause('agent', true), true);
+  assert.equal(isBlockedByWritePause(undefined, true), true, 'unknown initiator fails closed');
+  assert.equal(isBlockedByWritePause('agent', false), false);
 });

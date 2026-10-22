@@ -24,7 +24,7 @@ import { templateRoot as TEMPLATE_ROOT } from '@kvd/template';
 import type { Context } from '@deepseek-ai/cordis';
 import type { SkillResult } from '@kvd/skills';
 import type { Proposal } from '@kvd/proposals';
-import { createWritePause, WRITE_PAUSED_MSG } from '@kvd/proposals';
+import { createWritePause, initiatorFromOrigin, isBlockedByWritePause, LOCAL_UI_ORIGIN, WRITE_PAUSED_MSG } from '@kvd/proposals';
 import type { WritePause, WritePauseState } from '@kvd/proposals';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -641,9 +641,22 @@ ipcMain.handle('agent-open-note', async (_e, noteRel: unknown) => {
   }
 });
 
-async function stashProposals(result: SkillResult): Promise<SkillResult & { proposalIds?: string[] }> {
+/**
+ * R2.6: the initiator is decided HERE, in the main process, from the IPC sender.
+ * Only a verified click in our own main window (classifyIpcOrigin → local) on a
+ * no-model action yields LOCAL_UI_ORIGIN → initiator 'user'. Model-driven skills
+ * never pass an origin, so their proposals are stamped 'agent' by the service.
+ */
+function userClickOrigin(e: IpcMainInvokeEvent): typeof LOCAL_UI_ORIGIN | null {
+  return isLocal(classifyIpcOrigin(e, mainWindow)) ? LOCAL_UI_ORIGIN : null;
+}
+
+async function stashProposals(
+  result: SkillResult,
+  origin: typeof LOCAL_UI_ORIGIN | null = null,
+): Promise<SkillResult & { proposalIds?: string[] }> {
   if (!result || !result.ok) return result;
-  if (writePause.isPaused() && (result.proposals || []).length) {
+  if (isBlockedByWritePause(initiatorFromOrigin(origin), writePause.isPaused()) && (result.proposals || []).length) {
     // A1 answers still come through; proposals are dropped, never queued.
     return { ...result, proposals: [], proposalIds: [], answer: `${result.answer || ''}\n\n（${WRITE_PAUSED_MSG}：未生成拟改动）` };
   }
@@ -652,8 +665,9 @@ async function stashProposals(result: SkillResult): Promise<SkillResult & { prop
     const proposals = ctx.get('proposals');
     if (proposals) {
       await syncVaultService(activeVault);
-      const ids = proposals.stashMany(result.proposals || []);
-      return { ...result, proposalIds: ids };
+      // Return the stamped (frozen) copies so the renderer sees `initiator`.
+      const stored = proposals.stashManyStored(result.proposals || [], { origin });
+      return { ...result, proposals: stored, proposalIds: stored.map((p) => p.id) };
     }
   } catch {
     /* fall through with empty ids */
@@ -734,11 +748,19 @@ ipcMain.handle('agent-wechat-titles', async (_e, draftRel: unknown) => {
   }
 });
 
-ipcMain.handle('agent-wechat-layout', async (_e, draftRel: unknown) => {
+ipcMain.handle('agent-wechat-layout', async (e, draftRel: unknown) => {
   if (!activeVault) return { ok: false, error: '未打开 vault' };
   const prefs = readPrefs();
   if (!prefs.privacyAccepted && hasApiKey(safeStorage)) {
     return { ok: false, error: '请先同意隐私说明', needPrivacy: true };
+  }
+  // R2.6: layout HTML is a fixed-rule local render (renderWechatLayoutHtml, no
+  // model call) of an already-Applied draft, triggered by a desktop click →
+  // user-initiated, not paused. Any non-local sender counts as agent and is
+  // refused while paused.
+  if (isBlockedByWritePause(initiatorFromOrigin(userClickOrigin(e)), writePause.isPaused())) {
+    const paused = writePausedRefusal();
+    if (paused) return paused;
   }
   try {
     // Layout lands via local tool immediately — no proposal stash required.
@@ -768,16 +790,22 @@ ipcMain.handle('agent-wechat-copy-html', async (_e, draftRel: unknown) => {
   }
 });
 
-ipcMain.handle('agent-wechat-publish', async (_e, draftRel: unknown) => {
+ipcMain.handle('agent-wechat-publish', async (e, draftRel: unknown) => {
   if (!activeVault) return { ok: false, error: '未打开 vault' };
   const prefs = readPrefs();
   if (!prefs.privacyAccepted && hasApiKey(safeStorage)) {
     return { ok: false, error: '请先同意隐私说明', needPrivacy: true };
   }
-  const paused = writePausedRefusal();
-  if (paused) return paused;
+  // R2.6: 「标记已发布」 is a human click with no model call → initiator 'user'
+  // (only when the sender is our main window); its edit+move proposals are
+  // created and can be Applied while paused. Apply still needs a human click.
+  const origin = userClickOrigin(e);
+  if (isBlockedByWritePause(initiatorFromOrigin(origin), writePause.isPaused())) {
+    const paused = writePausedRefusal();
+    if (paused) return paused;
+  }
   try {
-    return stashProposals(await runSkill('wechatPublish', { draftRel: String(draftRel ?? '') }));
+    return stashProposals(await runSkill('wechatPublish', { draftRel: String(draftRel ?? '') }), origin);
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
   }

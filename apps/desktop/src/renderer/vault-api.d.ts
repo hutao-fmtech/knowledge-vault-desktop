@@ -12,6 +12,8 @@ interface UiProposal {
   content?: string;
   before?: string;
   summary?: string;
+  /** Stamped by the main-process proposals service (R2.6); read-only for the UI. */
+  initiator?: 'agent' | 'user';
 }
 
 interface UiTreeNode {

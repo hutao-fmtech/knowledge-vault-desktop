@@ -209,8 +209,11 @@ function renderProposals() {
     const applyBtn = document.createElement('button');
     applyBtn.className = 'primary';
     applyBtn.textContent = 'Apply';
-    applyBtn.disabled = writePaused;
-    if (writePaused) applyBtn.title = '写入已暂停：解除暂停后才能 Apply';
+    // R2.6: pause blocks agent-initiated proposals only; user-initiated
+    // (e.g. 标记已发布) still Apply. Main re-checks — this is just the UI state.
+    const pausedForThis = writePaused && p.initiator !== 'user';
+    applyBtn.disabled = pausedForThis;
+    if (pausedForThis) applyBtn.title = '写入已暂停：Agent 发起的拟改动需解除暂停后才能 Apply';
     applyBtn.addEventListener('click', async () => {
       const res = await window.vaultApi.agentApply(p.id);
       if (!res.ok) {

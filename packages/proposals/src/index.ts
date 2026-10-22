@@ -10,8 +10,8 @@ import { Context, Service } from '@deepseek-ai/cordis';
 import type {} from '@kvd/ipc-bridge';
 import z from '@deepseek-ai/schemastery';
 import { resolveVaultPath, assertInsideVault } from '@kvd/vault';
-import { LOCAL_UI_ORIGIN, WRITE_PAUSED_MSG, describeOrigin, isLocalUiOrigin } from './write-pause.js';
-import type { ActionOrigin, WritePause } from './write-pause.js';
+import { LOCAL_UI_ORIGIN, WRITE_PAUSED_MSG, describeOrigin, initiatorFromOrigin, isBlockedByWritePause, isLocalUiOrigin } from './write-pause.js';
+import type { ActionOrigin, ProposalInitiator, WritePause } from './write-pause.js';
 
 export * from './write-pause.js';
 
@@ -46,6 +46,15 @@ export interface Proposal {
   /** edit only: sha256 (hex) of the target file bytes when the proposal was generated. */
   beforeSha256?: string;
   summary: string;
+  /**
+   * Who initiated it (spec R2.6). Stamped ONLY by ProposalsService when the
+   * proposal enters the pending store: 'user' iff the caller handed a verified
+   * desktop-click origin (main process, main-window IPC); anything else —
+   * including a value the caller put on the object — becomes 'agent'.
+   * Stored proposals are frozen, so it cannot change after creation.
+   * The agent-log track records it too.
+   */
+  readonly initiator?: ProposalInitiator;
 }
 
 export type Failure = { ok: false; error: string; code?: string };
@@ -349,20 +358,41 @@ export class ProposalsService extends Service {
     return this.ctx.vault.getRoot();
   }
 
-  stash(proposal: Proposal | null | undefined): void {
-    if (!proposal || !proposal.id || this.isWritePaused()) return;
-    this._pending.set(proposal.id, proposal);
+  /**
+   * Put one proposal into the pending store and return the stored (frozen)
+   * copy. `initiator` is derived from `opts.origin` here and nowhere else: any
+   * `initiator` on the incoming object is ignored. While writes are paused an
+   * agent-initiated proposal is dropped (null). An id that is already pending
+   * is never replaced (no re-stamping / content swap of an existing proposal).
+   */
+  private _store(proposal: Proposal | null | undefined, origin: ActionOrigin | null | undefined): Proposal | null {
+    if (!proposal || !proposal.id) return null;
+    const initiator = initiatorFromOrigin(origin);
+    if (isBlockedByWritePause(initiator, this.isWritePaused())) return null;
+    const existing = this._pending.get(proposal.id);
+    if (existing) return existing.initiator === initiator ? existing : null;
+    const stored = Object.freeze({ ...proposal, initiator }) as Proposal;
+    this._pending.set(stored.id, stored);
+    return stored;
   }
 
-  stashMany(proposals: readonly Proposal[] | null | undefined): string[] {
-    const ids: string[] = [];
-    if (this.isWritePaused()) return ids;
+  /** Stash one proposal. Without a verified desktop-click `origin` it is agent-initiated. */
+  stash(proposal: Proposal | null | undefined, opts: { origin?: ActionOrigin | null } = {}): Proposal | null {
+    return this._store(proposal, opts.origin);
+  }
+
+  /** Stash several; returns the ids actually stored. See `stashManyStored` for the stamped copies. */
+  stashMany(proposals: readonly Proposal[] | null | undefined, opts: { origin?: ActionOrigin | null } = {}): string[] {
+    return this.stashManyStored(proposals, opts).map((p) => p.id);
+  }
+
+  stashManyStored(proposals: readonly Proposal[] | null | undefined, opts: { origin?: ActionOrigin | null } = {}): Proposal[] {
+    const out: Proposal[] = [];
     for (const p of proposals || []) {
-      if (!p || !p.id) continue;
-      this._pending.set(p.id, p);
-      ids.push(p.id);
+      const stored = this._store(p, opts.origin);
+      if (stored) out.push(stored);
     }
-    return ids;
+    return out;
   }
 
   get(id: string): Proposal | undefined {
@@ -381,49 +411,49 @@ export class ProposalsService extends Service {
     this._pending.clear();
   }
 
-  create(relPath: unknown, content: unknown, summary?: string): ProposeResult {
-    if (this.isWritePaused()) return this._pausedFailure();
-    const root = this.root();
-    if (!root) return { ok: false, error: '未打开 vault' };
-    const res = proposeCreate(root, relPath, content, summary);
-    if (res.ok) this.stash(res.proposal);
-    return res;
+  create(relPath: unknown, content: unknown, summary?: string, opts: { origin?: ActionOrigin | null } = {}): ProposeResult {
+    return this._propose(() => proposeCreate(this.root()!, relPath, content, summary), opts.origin);
   }
 
-  edit(relPath: unknown, content: unknown, summary?: string): ProposeResult {
-    if (this.isWritePaused()) return this._pausedFailure();
-    const root = this.root();
-    if (!root) return { ok: false, error: '未打开 vault' };
-    const res = proposeEdit(root, relPath, content, summary);
-    if (res.ok) this.stash(res.proposal);
-    return res;
+  edit(relPath: unknown, content: unknown, summary?: string, opts: { origin?: ActionOrigin | null } = {}): ProposeResult {
+    return this._propose(() => proposeEdit(this.root()!, relPath, content, summary), opts.origin);
   }
 
-  move(fromRel: unknown, toRel: unknown, summary?: string): ProposeResult {
-    if (this.isWritePaused()) return this._pausedFailure();
-    const root = this.root();
-    if (!root) return { ok: false, error: '未打开 vault' };
-    const res = proposeMove(root, fromRel, toRel, summary);
-    if (res.ok) this.stash(res.proposal);
-    return res;
+  move(fromRel: unknown, toRel: unknown, summary?: string, opts: { origin?: ActionOrigin | null } = {}): ProposeResult {
+    return this._propose(() => proposeMove(this.root()!, fromRel, toRel, summary), opts.origin);
+  }
+
+  /** Shared create/edit/move path: pause guard by initiator, then stamp + store. */
+  private _propose(build: () => ProposeResult, origin: ActionOrigin | null | undefined): ProposeResult {
+    if (isBlockedByWritePause(initiatorFromOrigin(origin), this.isWritePaused())) return this._pausedFailure();
+    if (!this.root()) return { ok: false, error: '未打开 vault' };
+    const res = build();
+    if (!res.ok) return res;
+    const stored = this._store(res.proposal, origin);
+    if (!stored) return this._pausedFailure();
+    return { ok: true, proposal: stored };
   }
 
   /**
    * Apply a pending proposal. R1: only a human click in the desktop renderer
    * (`origin.kind === 'local-renderer'`) may Apply; the agent engine, tool layer,
    * skills and remote channels have no Apply entry, whatever the tool policy
-   * ("log-only" included). R2: refused while writes are paused. Disk unchanged
-   * and the proposal stays pending (Discard still works) on refusal.
+   * ("log-only" included) — for ALL proposals, whoever initiated them.
+   * R2/R2.6: while writes are paused, agent-initiated proposals are refused;
+   * user-initiated ones (stamped from a desktop click) still Apply. Disk
+   * unchanged and the proposal stays pending (Discard still works) on refusal.
    */
   apply(id: string, origin?: ActionOrigin | null): ApplyResult {
     if (!isLocalUiOrigin(origin)) {
       return this._rejectApply(id, 'APPLY_FORBIDDEN', origin, 'Apply 只能由用户在本机桌面界面手动点击，已拒绝（未写入）');
     }
-    if (this.isWritePaused()) return this._rejectApply(id, 'WRITE_PAUSED', origin, this._pausedFailure().error);
     const root = this.root();
     if (!root) return { ok: false, error: '未打开 vault' };
     const proposal = this._pending.get(id);
     if (!proposal) return { ok: false, error: '找不到拟改动（可能已处理）' };
+    if (isBlockedByWritePause(proposal.initiator, this.isWritePaused())) {
+      return this._rejectApply(id, 'WRITE_PAUSED', origin, this._pausedFailure().error);
+    }
     const result = applyProposal(root, proposal);
     if (result.ok) this._pending.delete(id);
     return result;

@@ -799,8 +799,50 @@ function assert(cond, msg) {
       !fs.existsSync(path.join(vault, ...String(pubRes.proposals[1].to).split('/'))),
       'w3 archive not on disk before Apply',
     );
-    assert(applyProposal(vault, pubRes.proposals[0]).ok, 'w3 apply edit mark');
-    assert(applyProposal(vault, pubRes.proposals[1]).ok, 'w3 apply move archive');
+    // R2.6: 「标记已发布」 is a human desktop click with no model call → initiator 'user';
+    // it is created AND Applied while writes are paused (Apply still a desktop click).
+    {
+      const { createWritePause, LOCAL_UI_ORIGIN, initiatorFromOrigin, isBlockedByWritePause } = await import('../packages/proposals/lib/index.js');
+      const { renderWechatLayoutHtml } = await import('../packages/skills-core/lib/index.js');
+      // The composition root was disposed above; mount a fresh proposals fiber on its own Context.
+      const { Context, Service } = await import('@deepseek-ai/cordis');
+      const { default: IpcBridge } = await import('../packages/ipc-bridge/lib/index.js');
+      const { default: ProposalsService } = await import('../packages/proposals/lib/index.js');
+      class SmokeVault extends Service {
+        constructor(c) { super(c, 'vault'); }
+        getRoot() { return vault; }
+      }
+      const pctx = new Context();
+      pctx.plugin(IpcBridge);
+      pctx.plugin(SmokeVault);
+      pctx.plugin(ProposalsService);
+      await new Promise((r) => setTimeout(r, 0));
+      const proposals = pctx.get('proposals');
+      assert(proposals, 'R2.6: standalone proposals service mounted');
+      let prefs = {};
+      const pause = createWritePause({ readPrefs: () => prefs, writePrefs: (x) => (prefs = { ...prefs, ...x }) });
+      proposals.attachWritePause(pause);
+      pause.pause({ kind: 'agent' });
+      assert(proposals.isWritePaused(), 'R2.6: paused for publish-archive check');
+      // Layout HTML: fixed-rule local render (no model) of an Applied draft, desktop click → not paused.
+      const md = '# T\n\n段落 **粗体**\n\n- a\n- b\n';
+      assert(renderWechatLayoutHtml({ title: 'T', markdown: md, style: 'OpenAI' }) === renderWechatLayoutHtml({ title: 'T', markdown: md, style: 'OpenAI' }), 'R2.6: layout HTML is deterministic (no model)');
+      assert(!isBlockedByWritePause(initiatorFromOrigin(LOCAL_UI_ORIGIN), true), 'R2.6: desktop-click layout not blocked while paused');
+      assert(isBlockedByWritePause(initiatorFromOrigin({ kind: 'remote', channel: 'ipc-foreign-url' }), true), 'R2.6: non-desktop layout request blocked while paused');
+      const layoutPaused = await w2Engine.wechatLayout({ vaultRoot: vault, draftRel: draftRel });
+      assert(layoutPaused.ok && layoutPaused.backend === 'local-tool' && fs.existsSync(path.join(vault, ...layoutPaused.layoutPath.split('/'))), 'R2.6: layout local tool writes while paused');
+      const agentTry = proposals.stashManyStored(pubRes.proposals, { origin: { kind: 'agent', channel: 'dsh-agent' } });
+      assert(agentTry.length === 0, 'R2.6: same publish proposals from an agent origin are dropped while paused');
+      const stored = proposals.stashManyStored(pubRes.proposals, { origin: LOCAL_UI_ORIGIN });
+      assert(stored.length === 2 && stored.every((p) => p.initiator === 'user' && Object.isFrozen(p)), 'R2.6: publish-archive proposals stamped initiator=user (frozen)');
+      assert(!proposals.apply(stored[0].id, { kind: 'agent' }).ok, 'R2.6/AC-P1: user-initiated proposal still refuses non-desktop Apply');
+      assert(proposals.apply(stored[0].id, LOCAL_UI_ORIGIN).ok, 'R2.6: w3 apply edit mark while paused');
+      assert(proposals.apply(stored[1].id, LOCAL_UI_ORIGIN).ok, 'R2.6: w3 apply move archive while paused');
+      const agentEdit = proposals.create('10-卡片盒/公众号/drafts/agent-paused.md', 'x', 'agent while paused');
+      assert(!agentEdit.ok && agentEdit.code === 'WRITE_PAUSED', 'R2.6: agent-initiated proposal still blocked while paused');
+      pause.resume(LOCAL_UI_ORIGIN);
+      proposals.attachWritePause(null);
+    }
     const archivedRel = pubRes.proposals[1].to;
     assert(fs.existsSync(path.join(vault, ...archivedRel.split('/'))), 'w3 archived on disk');
     assert(!fs.existsSync(path.join(vault, ...draftRel.split('/'))), 'w3 draft left drafts/');
