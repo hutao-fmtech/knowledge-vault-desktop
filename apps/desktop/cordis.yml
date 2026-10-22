@@ -31,6 +31,9 @@
   name: '@kvd/vault'
 - id: kvd-search
   name: '@kvd/search'
+- id: kvd-agent-log
+  # Proposal-lifecycle audit log -> <vault>/.vault/agent-log (paths + hashes only).
+  name: '@kvd/agent-log/plugin'
 - id: kvd-proposals
   name: '@kvd/proposals'
 - id: dsh-llm

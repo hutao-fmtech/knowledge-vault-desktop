@@ -10,6 +10,9 @@
       "@kvd/agent-log": [
         "./packages/agent-log/src/index.ts"
       ],
+      "@kvd/agent-log/plugin": [
+        "./packages/agent-log/src/plugin.ts"
+      ],
       "@kvd/advanced/controller": [
         "./packages/advanced/src/controller.ts"
       ],

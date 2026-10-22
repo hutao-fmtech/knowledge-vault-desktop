@@ -233,6 +233,7 @@ async function attachIpcBridge() {
       ipc.attachMainWindow(() => mainWindow);
     }
     // R2 write pause (app config) + R1 refused-Apply log on kvd-proposals.
+    ctx.get('agentLog')?.setAppVersion(app.getVersion());
     const proposals = ctx.get('proposals');
     if (proposals) {
       proposals.attachWritePause(writePause);
@@ -273,6 +274,18 @@ const toolLog: ToolLog = createToolLog({
 const writePause: WritePause = createWritePause({ readPrefs, writePrefs });
 writePause.onChange((st: WritePauseState, reason: string, origin: string) => {
   toolLog.append({ event: 'write-pause', reason, origin, paused: st.paused });
+  // Agent-log (AL-1): pause.on / pause.off into the open vault's .vault/agent-log.
+  if (reason === 'paused' || reason === 'resumed') {
+    const root = activeVault;
+    void getRuntimeCtx()
+      .then((ctx) => {
+        ctx.emit('kvd/agent-log', {
+          root,
+          record: { ev: reason === 'paused' ? 'pause.on' : 'pause.off', origin, actor: origin === LOCAL_UI_ORIGIN.kind ? 'user' : 'agent' },
+        });
+      })
+      .catch(() => {});
+  }
   sendToRenderer('write-pause-state', st);
 });
 /** Refuse a proposal-generating action up front while writes are paused. */
@@ -318,9 +331,11 @@ async function proposeFromAgent(change: ProposeChange | null | undefined): Promi
     await syncVaultService(activeVault);
     const c = change || {};
     let res: ReturnType<typeof proposals.create>;
-    if (c.kind === 'create') res = proposals.create(c.path, c.content, c.summary);
-    else if (c.kind === 'edit') res = proposals.edit(c.path, c.content, c.summary);
-    else if (c.kind === 'move') res = proposals.move(c.from, c.to, c.summary);
+    // Agent-log source for the advanced tool path (AL-3); initiator is 'agent' (no origin).
+    const opts = { source: 'agent-advanced:vault_propose_change' };
+    if (c.kind === 'create') res = proposals.create(c.path, c.content, c.summary, opts);
+    else if (c.kind === 'edit') res = proposals.edit(c.path, c.content, c.summary, opts);
+    else if (c.kind === 'move') res = proposals.move(c.from, c.to, c.summary, opts);
     else res = { ok: false, error: `未知改动类型：${String(c.kind)}` };
     if (!res.ok) return res;
     proposals.pushToUi(res.proposal);
@@ -654,6 +669,7 @@ function userClickOrigin(e: IpcMainInvokeEvent): typeof LOCAL_UI_ORIGIN | null {
 async function stashProposals(
   result: SkillResult,
   origin: typeof LOCAL_UI_ORIGIN | null = null,
+  source?: string,
 ): Promise<SkillResult & { proposalIds?: string[] }> {
   if (!result || !result.ok) return result;
   if (isBlockedByWritePause(initiatorFromOrigin(origin), writePause.isPaused()) && (result.proposals || []).length) {
@@ -666,7 +682,7 @@ async function stashProposals(
     if (proposals) {
       await syncVaultService(activeVault);
       // Return the stamped (frozen) copies so the renderer sees `initiator`.
-      const stored = proposals.stashManyStored(result.proposals || [], { origin });
+      const stored = proposals.stashManyStored(result.proposals || [], { origin, ...(source ? { source } : {}) });
       return { ...result, proposals: stored, proposalIds: stored.map((p) => p.id) };
     }
   } catch {
@@ -682,7 +698,7 @@ ipcMain.handle('agent-ask', async (_e, question: unknown) => {
     return { ok: false, error: '请先同意隐私说明', needPrivacy: true };
   }
   try {
-    return stashProposals(await runSkill('ask', { question: String(question ?? '') }));
+    return stashProposals(await runSkill('ask', { question: String(question ?? '') }), null, 'skill:ask');
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
   }
@@ -697,7 +713,7 @@ ipcMain.handle('agent-sort', async (_e, noteRel: unknown) => {
   const paused = writePausedRefusal();
   if (paused) return paused;
   try {
-    return stashProposals(await runSkill('sortInbox', { noteRel: String(noteRel ?? '') }));
+    return stashProposals(await runSkill('sortInbox', { noteRel: String(noteRel ?? '') }), null, 'skill:sortInbox');
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
   }
@@ -712,7 +728,7 @@ ipcMain.handle('agent-card', async (_e, noteRel: unknown) => {
   const paused = writePausedRefusal();
   if (paused) return paused;
   try {
-    return stashProposals(await runSkill('makeCard', { noteRel: String(noteRel ?? '') }));
+    return stashProposals(await runSkill('makeCard', { noteRel: String(noteRel ?? '') }), null, 'skill:makeCard');
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
   }
@@ -727,7 +743,7 @@ ipcMain.handle('agent-wechat-draft', async (_e, briefRel: unknown) => {
   const paused = writePausedRefusal();
   if (paused) return paused;
   try {
-    return stashProposals(await runSkill('wechatDraft', { briefRel: String(briefRel ?? '') }));
+    return stashProposals(await runSkill('wechatDraft', { briefRel: String(briefRel ?? '') }), null, 'skill:wechatDraft');
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
   }
@@ -742,7 +758,7 @@ ipcMain.handle('agent-wechat-titles', async (_e, draftRel: unknown) => {
   const paused = writePausedRefusal();
   if (paused) return paused;
   try {
-    return stashProposals(await runSkill('wechatTitles', { draftRel: String(draftRel ?? '') }));
+    return stashProposals(await runSkill('wechatTitles', { draftRel: String(draftRel ?? '') }), null, 'skill:wechatTitles');
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
   }
@@ -805,7 +821,7 @@ ipcMain.handle('agent-wechat-publish', async (e, draftRel: unknown) => {
     if (paused) return paused;
   }
   try {
-    return stashProposals(await runSkill('wechatPublish', { draftRel: String(draftRel ?? '') }), origin);
+    return stashProposals(await runSkill('wechatPublish', { draftRel: String(draftRel ?? '') }), origin, 'skill:wechatPublish');
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
   }

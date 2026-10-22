@@ -13,11 +13,11 @@ import {
 test('composition is loaded from apps/desktop/cordis.yml', () => {
   assert.ok(CORDIS_YML.endsWith('cordis.yml'));
   assert.deepEqual(DEFAULT_ROWS.map((r) => r.id), [
-    'kvd-prefs', 'kvd-ipc-bridge', 'kvd-keychain', 'kvd-vault', 'kvd-search', 'kvd-proposals',
+    'kvd-prefs', 'kvd-ipc-bridge', 'kvd-keychain', 'kvd-vault', 'kvd-search', 'kvd-agent-log', 'kvd-proposals',
     'dsh-llm', 'kvd-privacy', 'dsh-llm-deepseek-api-key', 'kvd-llm-mock', 'kvd-skills',
   ]);
   assert.equal(ADVANCED_ROWS.length, 17);
-  assert.equal(compositionPluginIds().length, 28);
+  assert.equal(compositionPluginIds().length, 29);
 });
 
 test('persona prefix and key env survive the YAML move unchanged', () => {

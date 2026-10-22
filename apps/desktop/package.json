@@ -164,6 +164,7 @@
     "@deepseek-ai/node-addon-system": "0.1.2",
     "@deepseek-ai/schemastery": "3.18.4",
     "@kvd/advanced": "workspace:*",
+    "@kvd/agent-log": "workspace:*",
     "@kvd/ipc-bridge": "workspace:*",
     "@kvd/keychain": "workspace:*",
     "@kvd/llm-mock": "workspace:*",

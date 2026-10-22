@@ -211,6 +211,7 @@ function assert(cond, msg) {
   assert(mount.hasVault, 'kvd-vault provides vault');
   assert(mount.hasVaultSearch, 'kvd-search provides vaultSearch');
   assert(mount.hasProposals, 'kvd-proposals provides proposals');
+  assert(mount.hasAgentLog && mount.plugins.includes('kvd-agent-log'), 'AL-9: kvd-agent-log mounted, provides agentLog');
   assert(mount.hasIpc, 'kvd-ipc-bridge provides ipc');
   assert(mount.hasSkills, 'kvd-skills provides kvdSkills');
   assert(mount.hasMockProvider, 'kvd-llm-mock registered kvd-mock provider');
@@ -438,6 +439,58 @@ function assert(cond, msg) {
     proposals.attachWritePause(null);
     offReject();
     fs.unlinkSync(abs);
+  }
+
+  // --- agent-log PR-2: full agent flow -> <vault>/.vault/agent-log (AL-1/2/3/5/9 end-to-end) ---
+  {
+    const { LOCAL_UI_ORIGIN: UI } = await import('../packages/proposals/lib/index.js');
+    const agentLog = ctx.get('agentLog');
+    assert(agentLog && /^[A-Za-z0-9_-]+$/.test(agentLog.deviceId), 'AL-9: kvd-agent-log service mounted with a device id');
+    // Marker + fake key live in the BODY (paths are logged by design; the title becomes the card path).
+    const MARK = 'AGENTLOG_E2E_MARKER_5d1';
+    const FAKE_KEY = 'sk-' + 'e'.repeat(32);
+    const flowVault = path.join(tmp, 'vault-agentlog');
+    fs.mkdirSync(path.join(flowVault, '01-收件箱', '待处理'), { recursive: true });
+    const markerRel = '01-收件箱/待处理/marker-note.md';
+    fs.writeFileSync(path.join(flowVault, ...markerRel.split('/')), `# 周会纪要\n\n机密：${MARK} 的项目想法与 ${FAKE_KEY}。\n`, 'utf8');
+    vaultSvc.setRoot(flowVault);
+    const skills = ctx.get('kvdSkills');
+    const askRes = await skills.ask({ question: `${MARK} ${FAKE_KEY} 有哪些项目想法？`, forceMock: true });
+    const sortRes = await skills.sortInbox({ noteRel: markerRel, forceMock: true });
+    const cardRes = await skills.makeCard({ noteRel: markerRel, forceMock: true });
+    assert(askRes.ok && sortRes.ok && cardRes.ok, 'AL-2: ask / sort / card ran on the marker note');
+    // Same calls as the shell's stashProposals (default mode) and proposeFromAgent (advanced tool).
+    const [sortP] = proposals.stashManyStored(sortRes.proposals, { source: 'skill:sortInbox' });
+    const [cardP] = proposals.stashManyStored(cardRes.proposals, { source: 'skill:makeCard' });
+    const advP = proposals.create('10-卡片盒/adv-marker.md', `# ${MARK}\n${FAKE_KEY}\n`, `summary ${MARK}`, { source: 'agent-advanced:vault_propose_change' });
+    assert(sortP && cardP && advP.ok, 'AL-3: default-mode and advanced proposals stored');
+    assert(proposals.apply(cardP.id, UI).ok, 'AL-1: card applied by a user click');
+    assert(proposals.discard(sortP.id, UI).ok, 'AL-1: sort proposal discarded');
+    // AL-5 end-to-end: the log location breaks, Apply still succeeds unchanged.
+    const p5 = proposals.create('10-卡片盒/al5.md', 'al5\n', 'al5', { source: 'skill:makeCard' });
+    fs.renameSync(path.join(flowVault, '.vault'), path.join(flowVault, '.vault-saved'));
+    fs.writeFileSync(path.join(flowVault, '.vault'), 'not a dir');
+    const r5 = proposals.apply(p5.proposal.id, UI);
+    assert(r5.ok && fs.readFileSync(path.join(flowVault, '10-卡片盒', 'al5.md'), 'utf8') === 'al5\n', 'AL-5: Apply result unchanged while the log write fails');
+    fs.rmSync(path.join(flowVault, '.vault'));
+    fs.renameSync(path.join(flowVault, '.vault-saved'), path.join(flowVault, '.vault'));
+    vaultSvc.setRoot(vault); // advP still pending -> expired in flowVault's log (AL-3)
+    const logDir = path.join(flowVault, '.vault', 'agent-log');
+    const files = fs.readdirSync(logDir);
+    assert(files.length >= 1 && files.every((f) => f.endsWith(`.${agentLog.deviceId}.jsonl`)), 'AL-1: day file named <day>.<deviceId>.jsonl');
+    const text = files.map((f) => fs.readFileSync(path.join(logDir, f), 'utf8')).join('');
+    const recs = text.trim().split('\n').map((l) => JSON.parse(l));
+    const has = (ev, origin) => recs.some((r) => r.ev === ev && r.origin === origin && r.v === 1 && /\+\d{2}:\d{2}$/.test(r.ts) && r.initiator);
+    assert(has('proposal.created', 'skill:sortInbox') && has('proposal.created', 'skill:makeCard') && has('proposal.created', 'agent-advanced:vault_propose_change'), 'AL-3: created events carry origin (default sort/card + advanced) and initiator');
+    assert(has('proposal.applied', 'skill:makeCard') && has('proposal.rejected', 'skill:sortInbox'), 'AL-1: applied + rejected logged');
+    assert(has('proposal.expired', 'agent-advanced:vault_propose_change'), 'AL-3: pending proposal expired on vault switch');
+    const applied = recs.find((r) => r.ev === 'proposal.applied');
+    assert(applied && /^[0-9a-f]{64}$/.test(applied.afterSha256 || '') && applied.actor === 'user', 'AL-1: applied has afterSha256 + actor user');
+    assert(recs.every((r) => r.initiator === 'agent'), 'AL-1: model-driven proposals stamped initiator=agent');
+    for (const needle of [MARK, FAKE_KEY, 'sk-', '机密', '项目想法', 'summary', 'content', 'question']) {
+      assert(!text.includes(needle), `AL-2: log has no "${needle}" (content / summary / prompt / key)`);
+    }
+    assert(!fs.existsSync(path.join(vault, '.vault', 'agent-log')) || !fs.readdirSync(path.join(vault, '.vault', 'agent-log')).some((f) => fs.readFileSync(path.join(vault, '.vault', 'agent-log', f), 'utf8').includes(MARK)), 'AL-2: other vault log untouched by the marker');
   }
 
   // ipc.push is callable (no window in pure-Node → false)
@@ -681,7 +734,7 @@ function assert(cond, msg) {
 
   // cordis.yml is the composition source (no hardcoded row table)
   const comp = await import('../apps/desktop/lib/runtime/composition.js');
-  assert(comp.DEFAULT_ROWS.length === 11 && comp.ADVANCED_ROWS.length === 17, 'cordis.yml declares 11 default + 17 advanced rows');
+  assert(comp.DEFAULT_ROWS.length === 12 && comp.ADVANCED_ROWS.length === 17, 'cordis.yml declares 12 default (incl. kvd-agent-log) + 17 advanced rows');
   for (const row of [...comp.DEFAULT_ROWS, ...comp.ADVANCED_ROWS]) {
     assert(Object.prototype.hasOwnProperty.call(pkg.dependencies, row.name.split('/').slice(0, 2).join('/')), `cordis.yml row ${row.id} -> ${row.name} is an apps/desktop dependency`);
   }

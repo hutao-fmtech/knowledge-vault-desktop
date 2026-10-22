@@ -45,6 +45,10 @@ const extra = mounted.filter((id) => !expected.includes(id));
 if (missing.length) fail(`plugins declared in cordis.yml but not mounted: ${missing.join(',')}`);
 if (extra.length) fail(`plugins mounted but not declared: ${extra.join(',')}`);
 if (Number(count) !== expected.length) fail(`count ${count} != ${expected.length}`);
+// AL-9: the agent-log plugin is part of the packaged composition.
+if (!expected.includes('kvd-agent-log') || !mounted.includes('kvd-agent-log')) fail('kvd-agent-log not declared/mounted');
+const smokeMount = JSON.parse((line('KVD_SMOKE_MOUNT') || 'KVD_SMOKE_MOUNT {}').slice('KVD_SMOKE_MOUNT '.length));
+if (smokeMount.hasAgentLog !== true) fail(`agentLog service missing in packaged app: ${JSON.stringify(smokeMount)}`);
 const appPkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'apps', 'desktop', 'package.json'), 'utf8'));
 const ver = (line('KVD_APP_VERSION') || '').split(' ')[1];
 if (ver !== appPkg.version) fail(`app version ${ver} != apps/desktop/package.json ${appPkg.version}`);

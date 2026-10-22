@@ -3,12 +3,16 @@
   "version": "0.2.2",
   "private": true,
   "type": "module",
-  "description": "kvd-agent-log: append-only proposal-lifecycle audit log at <vault>/.vault/agent-log (paths + hashes only, never note content).",
+  "description": "kvd-agent-log: append-only proposal-lifecycle audit log at <vault>/.vault/agent-log (paths + hashes only, never note content) + its Cordis plugin.",
   "license": "MIT",
   "exports": {
     ".": {
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
+    },
+    "./plugin": {
+      "types": "./lib/plugin.d.ts",
+      "default": "./lib/plugin.js"
     }
   },
   "files": [
@@ -21,5 +25,11 @@
   },
   "devDependencies": {
     "vitest": "4.1.8"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/schemastery": "3.18.4",
+    "@kvd/shared": "workspace:*",
+    "@kvd/vault": "workspace:*"
   }
 }
