@@ -24,6 +24,8 @@ import { templateRoot as TEMPLATE_ROOT } from '@kvd/template';
 import type { Context } from '@deepseek-ai/cordis';
 import type { SkillResult } from '@kvd/skills';
 import type { Proposal } from '@kvd/proposals';
+import { createWritePause, WRITE_PAUSED_MSG } from '@kvd/proposals';
+import type { WritePause, WritePauseState } from '@kvd/proposals';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /** The renderer file this main window loads (lib/renderer/index.html). */
@@ -230,6 +232,12 @@ async function attachIpcBridge() {
     if (ipc && typeof ipc.attachMainWindow === 'function') {
       ipc.attachMainWindow(() => mainWindow);
     }
+    // R2 write pause (app config) + R1 refused-Apply log on kvd-proposals.
+    const proposals = ctx.get('proposals');
+    if (proposals) {
+      proposals.attachWritePause(writePause);
+      proposals.onApplyRejected((r) => toolLog.append({ event: 'apply-rejected', ...r }));
+    }
   } catch {
     /* ignore */
   }
@@ -261,6 +269,18 @@ const toolLog: ToolLog = createToolLog({
   dir: path.join(kvd.configDir(), 'logs'),
   getSecrets: () => [loadApiKey(safeStorage).key],
 });
+// Global write pause (spec R2): prefs.json in the app config dir, never a vault note.
+const writePause: WritePause = createWritePause({ readPrefs, writePrefs });
+writePause.onChange((st: WritePauseState, reason: string, origin: string) => {
+  toolLog.append({ event: 'write-pause', reason, origin, paused: st.paused });
+  sendToRenderer('write-pause-state', st);
+});
+/** Refuse a proposal-generating action up front while writes are paused. */
+function writePausedRefusal(): { ok: false; code: 'WRITE_PAUSED'; error: string; writePaused: true } | null {
+  return writePause.isPaused()
+    ? { ok: false, code: 'WRITE_PAUSED', error: `${WRITE_PAUSED_MSG}：不会生成新的拟改动。可在侧栏或「设置」中手动解除。`, writePaused: true }
+    : null;
+}
 type UiDecision = 'allow' | 'deny';
 const approvalWaiters = new Map<string, (d: UiDecision) => void>();
 let advancedHost: ReturnType<typeof createAdvancedHost> | null = null;
@@ -550,6 +570,7 @@ ipcMain.handle('agent-status', () => {
     privacyAccepted: !!prefs.privacyAccepted,
     mode: advanced.getState().enabled ? 'advanced' : 'default',
     toolPolicy: advanced.getState().policy,
+    writePaused: writePause.isPaused(),
     engine: hasApiKey(safeStorage) ? 'dsh-llm-model-only' : 'mock',
   };
 });
@@ -622,6 +643,10 @@ ipcMain.handle('agent-open-note', async (_e, noteRel: unknown) => {
 
 async function stashProposals(result: SkillResult): Promise<SkillResult & { proposalIds?: string[] }> {
   if (!result || !result.ok) return result;
+  if (writePause.isPaused() && (result.proposals || []).length) {
+    // A1 answers still come through; proposals are dropped, never queued.
+    return { ...result, proposals: [], proposalIds: [], answer: `${result.answer || ''}\n\n（${WRITE_PAUSED_MSG}：未生成拟改动）` };
+  }
   try {
     const ctx = await getRuntimeCtx();
     const proposals = ctx.get('proposals');
@@ -655,6 +680,8 @@ ipcMain.handle('agent-sort', async (_e, noteRel: unknown) => {
   if (!prefs.privacyAccepted && hasApiKey(safeStorage)) {
     return { ok: false, error: '请先同意隐私说明', needPrivacy: true };
   }
+  const paused = writePausedRefusal();
+  if (paused) return paused;
   try {
     return stashProposals(await runSkill('sortInbox', { noteRel: String(noteRel ?? '') }));
   } catch (err) {
@@ -668,6 +695,8 @@ ipcMain.handle('agent-card', async (_e, noteRel: unknown) => {
   if (!prefs.privacyAccepted && hasApiKey(safeStorage)) {
     return { ok: false, error: '请先同意隐私说明', needPrivacy: true };
   }
+  const paused = writePausedRefusal();
+  if (paused) return paused;
   try {
     return stashProposals(await runSkill('makeCard', { noteRel: String(noteRel ?? '') }));
   } catch (err) {
@@ -681,6 +710,8 @@ ipcMain.handle('agent-wechat-draft', async (_e, briefRel: unknown) => {
   if (!prefs.privacyAccepted && hasApiKey(safeStorage)) {
     return { ok: false, error: '请先同意隐私说明', needPrivacy: true };
   }
+  const paused = writePausedRefusal();
+  if (paused) return paused;
   try {
     return stashProposals(await runSkill('wechatDraft', { briefRel: String(briefRel ?? '') }));
   } catch (err) {
@@ -694,6 +725,8 @@ ipcMain.handle('agent-wechat-titles', async (_e, draftRel: unknown) => {
   if (!prefs.privacyAccepted && hasApiKey(safeStorage)) {
     return { ok: false, error: '请先同意隐私说明', needPrivacy: true };
   }
+  const paused = writePausedRefusal();
+  if (paused) return paused;
   try {
     return stashProposals(await runSkill('wechatTitles', { draftRel: String(draftRel ?? '') }));
   } catch (err) {
@@ -741,6 +774,8 @@ ipcMain.handle('agent-wechat-publish', async (_e, draftRel: unknown) => {
   if (!prefs.privacyAccepted && hasApiKey(safeStorage)) {
     return { ok: false, error: '请先同意隐私说明', needPrivacy: true };
   }
+  const paused = writePausedRefusal();
+  if (paused) return paused;
   try {
     return stashProposals(await runSkill('wechatPublish', { draftRel: String(draftRel ?? '') }));
   } catch (err) {
@@ -764,6 +799,15 @@ ipcMain.handle('agent-wechat-preview', async (_e, draftRel: unknown) => {
 });
 
 // agent-apply / agent-discard: registered by kvd-proposals via kvd-ipc-bridge
+// (Apply only from a click in this renderer; refused while writes are paused).
+
+// ---- Global write pause (R2): anyone may pause; only a local manual click resumes ----
+ipcMain.handle('write-pause-status', () => ({ ok: true, ...writePause.getState() }));
+
+ipcMain.handle('write-pause-set', (e, opts: { paused?: unknown } | null) => {
+  const origin = classifyIpcOrigin(e, mainWindow);
+  return opts && opts.paused === false ? writePause.resume(origin) : writePause.pause(origin);
+});
 
 // ---- Settings > Advanced IPC (local origin only for enable/policy/approval) ----
 

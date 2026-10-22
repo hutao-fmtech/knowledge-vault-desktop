@@ -399,6 +399,47 @@ function assert(cond, msg) {
   vaultSvc.setRoot(vault);
   assert(proposals.size() === 0, 'still clear after switch back');
 
+  // --- Spec R1/R2: Agent cannot accept its own proposals + global write pause ---
+  {
+    const { createWritePause, LOCAL_UI_ORIGIN } = await import('../packages/proposals/lib/index.js');
+    const rejections = [];
+    const offReject = proposals.onApplyRejected((r) => rejections.push(r));
+    const rel = '10-卡片盒/概念卡片/self-accept.md';
+    const abs = path.join(vault, ...rel.split('/'));
+    const mine = proposals.create(rel, '# self\n', 'agent self-accept attempt');
+    assert(mine.ok, 'R1: agent proposal created');
+    const snap = () => (fs.existsSync(abs) ? fs.readFileSync(abs, 'base64') : null);
+    for (const origin of [undefined, { kind: 'agent', channel: 'dsh-agent' }, { kind: 'tool', channel: 'vault_propose_change' }, { kind: 'remote', channel: 'feishu' }]) {
+      const r = proposals.apply(mine.proposal.id, origin);
+      assert(!r.ok && r.code === 'APPLY_FORBIDDEN', `AC-P1: Apply from ${origin ? origin.kind : 'no origin'} refused`);
+    }
+    assert(snap() === null, 'AC-P1: disk unchanged after refused self-Apply');
+    assert(rejections.length === 4 && rejections.every((r) => r.code === 'APPLY_FORBIDDEN' && r.reason), 'AC-P1: refusal reasons reach the log listener');
+
+    let prefs = {};
+    const pause = createWritePause({ readPrefs: () => prefs, writePrefs: (x) => (prefs = { ...prefs, ...x }) });
+    proposals.attachWritePause(pause);
+    assert(pause.pause({ kind: 'agent' }).ok && proposals.isWritePaused(), 'AC-P3: any origin may pause writes');
+    const blocked = proposals.create('10-卡片盒/概念卡片/paused.md', 'x', 'paused');
+    assert(!blocked.ok && blocked.code === 'WRITE_PAUSED' && /写入已暂停/.test(blocked.error), 'AC-P3: no new proposal while paused');
+    const lockedApply = proposals.apply(mine.proposal.id, LOCAL_UI_ORIGIN);
+    assert(!lockedApply.ok && lockedApply.code === 'WRITE_PAUSED' && snap() === null, 'AC-P3: existing proposal cannot Apply while paused');
+    const pausedAsk = await ctx.get('kvdSkills').ask({ question: '项目想法有哪些？', forceMock: true });
+    assert(pausedAsk.ok, 'AC-P3: A1 ask still answers while paused');
+    for (const origin of [undefined, { kind: 'agent' }, { kind: 'remote', channel: 'wecom' }]) {
+      assert(!pause.resume(origin).ok && proposals.isWritePaused(), 'AC-P4: agent/remote cannot lift the pause');
+    }
+    assert(pause.resume(LOCAL_UI_ORIGIN).ok && !proposals.isWritePaused(), 'AC-P4: local manual resume is immediate');
+    assert(proposals.apply(mine.proposal.id, LOCAL_UI_ORIGIN).ok && snap() !== null, 'R1: human click in the renderer applies');
+    const again = proposals.create('10-卡片盒/概念卡片/self-accept-2.md', 'x', 'discard me');
+    pause.pause();
+    assert(proposals.discard(again.proposal.id).ok, 'AC-P3: Discard still works while paused');
+    pause.resume(LOCAL_UI_ORIGIN);
+    proposals.attachWritePause(null);
+    offReject();
+    fs.unlinkSync(abs);
+  }
+
   // ipc.push is callable (no window in pure-Node → false)
   assert(ipc.push('agent-proposal', { id: 'x' }) === false, 'ipc.push no-ops without window');
 

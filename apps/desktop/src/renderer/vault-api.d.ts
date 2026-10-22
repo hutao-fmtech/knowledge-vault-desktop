@@ -26,6 +26,11 @@ interface UiAdvancedState {
   runtime?: { running?: boolean; lastError?: string | null };
 }
 
+interface UiWritePauseState {
+  paused: boolean;
+  pausedAt?: string;
+}
+
 interface UiApprovalRequest {
   id: string;
   tool: string;
@@ -91,6 +96,9 @@ interface VaultApi {
   agentWechatPreview(n: string): Promise<ApiResult>;
   agentApply(id: string): Promise<ApiResult>;
   agentDiscard(id: string): Promise<ApiResult>;
+  writePauseStatus(): Promise<UiWritePauseState & ApiResult>;
+  writePauseSet(paused: boolean): Promise<ApiResult & { state?: UiWritePauseState }>;
+  onWritePauseState(cb: (st: UiWritePauseState) => void): void;
   advancedStatus(): Promise<UiAdvancedState & ApiResult>;
   advancedEnable(acknowledgeRisk: boolean): Promise<ApiResult>;
   advancedDisable(): Promise<ApiResult>;

@@ -34,6 +34,9 @@ const els = {
   inputKey: $<HTMLInputElement>('input-api-key'),
 };
 
+/** R2: mirrored from the main process ('write-pause-state'); main stays authoritative. */
+let writePaused = false;
+
 const state: { parentDir: string; lastVaultPath: string; proposals: UiProposal[] } = {
   parentDir: '',
   lastVaultPath: '',
@@ -206,6 +209,8 @@ function renderProposals() {
     const applyBtn = document.createElement('button');
     applyBtn.className = 'primary';
     applyBtn.textContent = 'Apply';
+    applyBtn.disabled = writePaused;
+    if (writePaused) applyBtn.title = '写入已暂停：解除暂停后才能 Apply';
     applyBtn.addEventListener('click', async () => {
       const res = await window.vaultApi.agentApply(p.id);
       if (!res.ok) {
@@ -492,6 +497,39 @@ async function init() {
 
   renderProposals();
   initAdvanced();
+  void initWritePause();
+}
+
+// ---------------------------------------------------------------------------
+// Global write pause (R2): sidebar quick toggle + Settings > Agent + indicator.
+// Pausing is always allowed; resuming is honoured by main only for this window.
+// ---------------------------------------------------------------------------
+function renderWritePause(st: UiWritePauseState | null | undefined): void {
+  if (!st) return;
+  writePaused = !!st.paused;
+  $('write-pause-indicator').classList.toggle('hidden', !writePaused);
+  const btn = $<HTMLButtonElement>('btn-write-pause');
+  btn.textContent = writePaused ? '▶' : '⏸';
+  btn.title = writePaused ? '解除写入暂停' : '暂停写入';
+  btn.classList.toggle('active', writePaused);
+  $<HTMLInputElement>('toggle-write-pause').checked = writePaused;
+  renderProposals();
+}
+
+async function setWritePause(paused: boolean): Promise<void> {
+  const res = await window.vaultApi.writePauseSet(paused);
+  if (!res.ok) els.agentAnswer.textContent = res.error || res.code || '';
+  renderWritePause(res.state || (await window.vaultApi.writePauseStatus()));
+}
+
+async function initWritePause(): Promise<void> {
+  $('btn-write-pause').addEventListener('click', () => void setWritePause(!writePaused));
+  $('btn-indicator-resume').addEventListener('click', () => void setWritePause(false));
+  $<HTMLInputElement>('toggle-write-pause').addEventListener('change', (ev) => {
+    void setWritePause((ev.target as HTMLInputElement).checked);
+  });
+  window.vaultApi.onWritePauseState((st) => renderWritePause(st));
+  renderWritePause(await window.vaultApi.writePauseStatus());
 }
 
 // ---------------------------------------------------------------------------

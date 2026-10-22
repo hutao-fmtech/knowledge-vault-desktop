@@ -10,6 +10,10 @@ import { Context, Service } from '@deepseek-ai/cordis';
 import type {} from '@kvd/ipc-bridge';
 import z from '@deepseek-ai/schemastery';
 import { resolveVaultPath, assertInsideVault } from '@kvd/vault';
+import { LOCAL_UI_ORIGIN, WRITE_PAUSED_MSG, describeOrigin, isLocalUiOrigin } from './write-pause.js';
+import type { ActionOrigin, WritePause } from './write-pause.js';
+
+export * from './write-pause.js';
 
 // ---- pure proposal helpers (folded from src/agent/proposals.js) ----
 let _seq = 0;
@@ -45,6 +49,15 @@ export interface Proposal {
 }
 
 export type Failure = { ok: false; error: string; code?: string };
+
+/** Why an Apply was refused (R1 / R2); recorded via onApplyRejected listeners. */
+export interface ApplyRejection {
+  id: string;
+  code: 'APPLY_FORBIDDEN' | 'WRITE_PAUSED';
+  origin: string;
+  reason: string;
+}
+export type ApplyRejectedListener = (rejection: ApplyRejection) => void;
 export type ProposeResult = { ok: true; proposal: Proposal } | Failure;
 export type ApplyResult = { ok: true; applied: Proposal } | Failure;
 
@@ -283,6 +296,8 @@ export class ProposalsService extends Service {
   static inject = ['vault', 'ipc'];
 
   private readonly _pending = new Map<string, Proposal>();
+  private _writePause: WritePause | null = null;
+  private readonly _rejectListeners = new Set<ApplyRejectedListener>();
 
   constructor(ctx: Context, _config: unknown = {}) {
     super(ctx, 'proposals');
@@ -294,9 +309,40 @@ export class ProposalsService extends Service {
     // IPC routes live on this fiber; dispose unregisters them (kvd-ipc-bridge).
     const ipc = ctx.get('ipc');
     if (ipc && typeof ipc.handle === 'function') {
-      ipc.handle('agent-apply', (_e, id) => this.apply(String(id)));
+      // R1: the bridge only invokes this for our own main window (REMOTE_FORBIDDEN
+      // otherwise), i.e. a user click in the desktop renderer.
+      ipc.handle('agent-apply', (e, id) =>
+        this.apply(String(id), ipc.isLocalSender(e) ? LOCAL_UI_ORIGIN : { kind: 'remote', channel: 'ipc' }),
+      );
       ipc.handle('agent-discard', (_e, id) => this.discard(String(id)));
     }
+  }
+
+  /** R2: attach the app-config write pause (main process owns prefs.json). */
+  attachWritePause(writePause: WritePause | null): void {
+    this._writePause = writePause;
+  }
+
+  isWritePaused(): boolean {
+    return !!this._writePause && this._writePause.isPaused();
+  }
+
+  /** Subscribe to refused Apply attempts (the shell writes them to the local log). */
+  onApplyRejected(fn: ApplyRejectedListener): () => boolean {
+    this._rejectListeners.add(fn);
+    return () => this._rejectListeners.delete(fn);
+  }
+
+  private _pausedFailure(): Failure {
+    return { ok: false, code: 'WRITE_PAUSED', error: `${WRITE_PAUSED_MSG}：不生成新的拟改动，已有拟改动暂不能 Apply（可 Discard）` };
+  }
+
+  private _rejectApply(id: string, code: ApplyRejection['code'], origin: ActionOrigin | null | undefined, error: string): Failure {
+    const rejection: ApplyRejection = { id, code, origin: describeOrigin(origin), reason: error };
+    for (const fn of this._rejectListeners) {
+      try { fn(rejection); } catch { /* logging never changes the outcome */ }
+    }
+    return { ok: false, code, error };
   }
 
   root(): string | null {
@@ -304,12 +350,13 @@ export class ProposalsService extends Service {
   }
 
   stash(proposal: Proposal | null | undefined): void {
-    if (!proposal || !proposal.id) return;
+    if (!proposal || !proposal.id || this.isWritePaused()) return;
     this._pending.set(proposal.id, proposal);
   }
 
   stashMany(proposals: readonly Proposal[] | null | undefined): string[] {
     const ids: string[] = [];
+    if (this.isWritePaused()) return ids;
     for (const p of proposals || []) {
       if (!p || !p.id) continue;
       this._pending.set(p.id, p);
@@ -335,6 +382,7 @@ export class ProposalsService extends Service {
   }
 
   create(relPath: unknown, content: unknown, summary?: string): ProposeResult {
+    if (this.isWritePaused()) return this._pausedFailure();
     const root = this.root();
     if (!root) return { ok: false, error: '未打开 vault' };
     const res = proposeCreate(root, relPath, content, summary);
@@ -343,6 +391,7 @@ export class ProposalsService extends Service {
   }
 
   edit(relPath: unknown, content: unknown, summary?: string): ProposeResult {
+    if (this.isWritePaused()) return this._pausedFailure();
     const root = this.root();
     if (!root) return { ok: false, error: '未打开 vault' };
     const res = proposeEdit(root, relPath, content, summary);
@@ -351,6 +400,7 @@ export class ProposalsService extends Service {
   }
 
   move(fromRel: unknown, toRel: unknown, summary?: string): ProposeResult {
+    if (this.isWritePaused()) return this._pausedFailure();
     const root = this.root();
     if (!root) return { ok: false, error: '未打开 vault' };
     const res = proposeMove(root, fromRel, toRel, summary);
@@ -358,7 +408,18 @@ export class ProposalsService extends Service {
     return res;
   }
 
-  apply(id: string): ApplyResult {
+  /**
+   * Apply a pending proposal. R1: only a human click in the desktop renderer
+   * (`origin.kind === 'local-renderer'`) may Apply; the agent engine, tool layer,
+   * skills and remote channels have no Apply entry, whatever the tool policy
+   * ("log-only" included). R2: refused while writes are paused. Disk unchanged
+   * and the proposal stays pending (Discard still works) on refusal.
+   */
+  apply(id: string, origin?: ActionOrigin | null): ApplyResult {
+    if (!isLocalUiOrigin(origin)) {
+      return this._rejectApply(id, 'APPLY_FORBIDDEN', origin, 'Apply 只能由用户在本机桌面界面手动点击，已拒绝（未写入）');
+    }
+    if (this.isWritePaused()) return this._rejectApply(id, 'WRITE_PAUSED', origin, this._pausedFailure().error);
     const root = this.root();
     if (!root) return { ok: false, error: '未打开 vault' };
     const proposal = this._pending.get(id);
