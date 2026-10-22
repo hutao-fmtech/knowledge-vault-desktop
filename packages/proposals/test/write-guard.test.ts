@@ -224,7 +224,7 @@ test('R2.6: agent-initiated proposal is blocked while paused (creation and Apply
   assert.equal(fs.readFileSync(path.join(vault, '10-卡片盒', 'n.md'), 'utf8'), 'v1\n');
 });
 
-test('R2.6 (CoS): agent / tool / remote cannot set or mutate initiator — forced to agent, immutable, still blocked while paused', async () => {
+test('AC-P7: agent / tool / remote cannot set or mutate initiator — forced to agent, immutable, still blocked while paused', async () => {
   const { vault, proposals, pause } = await setup();
   // 1. Forged `initiator: 'user'` on the object, with every non-desktop origin.
   const ids: string[] = [];
