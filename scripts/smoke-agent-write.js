@@ -20,6 +20,7 @@ function assert(cond, msg) {
   const {
     proposeCreate,
     proposeMove,
+    proposeEdit,
     applyProposal,
     discardProposal,
     formatProposalReview,
@@ -120,6 +121,23 @@ function assert(cond, msg) {
     fs.existsSync(path.join(vault, '10-卡片盒', '概念卡片', 'smoke-card.md')),
     'apply create failed'
   );
+
+  // (c1) AL-0 / PR-0 TOCTOU: edit Apply refuses when the file changed after propose
+  {
+    const staleRel = '10-卡片盒/概念卡片/smoke-card.md';
+    const staleAbs = path.join(vault, '10-卡片盒', '概念卡片', 'smoke-card.md');
+    const pStale = proposeEdit(vault, staleRel, '# Card (agent)\n', 'stale edit');
+    assert(pStale.ok && /^[0-9a-f]{64}$/.test(pStale.proposal.beforeSha256 || ''), 'AL-0: edit proposal records beforeSha256');
+    fs.writeFileSync(staleAbs, '# Card\nuser edit after propose\n', 'utf8');
+    const staleBytes = fs.readFileSync(staleAbs);
+    const staleRes = applyProposal(vault, pStale.proposal);
+    assert(!staleRes.ok && staleRes.code === 'STALE', 'AL-0: stale edit Apply refused');
+    assert(/文件已被改动，请重新生成建议/.test(staleRes.error || ''), 'AL-0: refusal asks to regenerate');
+    assert(fs.readFileSync(staleAbs).equals(staleBytes), 'AL-0: disk byte-identical after refusal');
+    const pFresh = proposeEdit(vault, staleRel, '# Card\n', 'fresh edit');
+    assert(pFresh.ok && applyProposal(vault, pFresh.proposal).ok, 'AL-0: unchanged file applies normally');
+    assert(fs.readFileSync(staleAbs, 'utf8') === '# Card\n', 'AL-0: fresh edit written');
+  }
 
   // (c2) Apply move
   const pMove = proposeMove(vault, noteRel, '02-项目/个人项目/smoke-note.md', 'sort');
