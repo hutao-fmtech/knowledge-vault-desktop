@@ -519,6 +519,38 @@ function assert(cond, msg) {
       assert(!text.includes(needle), `AL-2: log has no "${needle}" (content / summary / prompt / key)`);
     }
     assert(!fs.existsSync(path.join(vault, '.vault', 'agent-log')) || !fs.readdirSync(path.join(vault, '.vault', 'agent-log')).some((f) => fs.readFileSync(path.join(vault, '.vault', 'agent-log', f), 'utf8').includes(MARK)), 'AL-2: other vault log untouched by the marker');
+
+    // --- AL-6 daily report: rebuild from JSONL; catch-up yesterday ---
+    {
+      const { reportAbsPath, yesterdayKey, dayKey } = await import('../packages/agent-log/lib/index.js');
+      const today = agentLog.generateToday(flowVault);
+      assert(today.ok && !today.empty && /^00-系统\/agent-日报\/\d{4}-\d{2}-\d{2}\.md$/.test(today.rel), 'AL-6: generateToday wrote under 00-系统/agent-日报/');
+      const body1 = fs.readFileSync(today.abs, 'utf8');
+      const again = agentLog.generateToday(flowVault);
+      assert(again.ok && !again.empty && fs.readFileSync(again.abs, 'utf8') === body1, 'AL-6: idempotent overwrite from JSONL');
+      assert(body1.includes('kvd: agent-report') && body1.includes('date: ') && !body1.includes('[[') && !body1.includes(']]'), 'AL-6: frontmatter + no wikilinks');
+      assert(/\| \d{2}:\d{2}:\d{2} \|/.test(body1) && body1.includes('| 来源 |'), 'AL-6: summary table + chronological rows');
+      assert(!/\\[A-Za-z]/.test(body1.replace(/```[\s\S]*?```/g, '')), 'AL-8: report paths use / not backslash');
+      const emptyVault = path.join(tmp, 'vault-report-empty');
+      fs.mkdirSync(emptyVault, { recursive: true });
+      const emptyRes = agentLog.generateToday(emptyVault);
+      assert(emptyRes.ok && emptyRes.empty && !fs.existsSync(path.join(emptyVault, '00-系统')), 'AL-6: zero events → do not write');
+      const yVault = path.join(tmp, 'vault-report-catchup');
+      fs.mkdirSync(yVault, { recursive: true });
+      const offset = agentLog.utcOffsetMinutes();
+      const now = new Date();
+      const yDay = yesterdayKey(now, offset);
+      agentLog.setNowForTests(() => new Date(now.getTime() - 86_400_000));
+      agentLog.append(yVault, { ev: 'pause.on', origin: 'desktop', actor: 'user' });
+      agentLog.setNowForTests(null);
+      assert(!fs.existsSync(reportAbsPath(yVault, yDay)), 'pre: no yesterday report');
+      vaultSvc.setRoot(yVault);
+      assert(fs.existsSync(reportAbsPath(yVault, yDay)), 'AL-6: catch-up wrote yesterday on vault open');
+      assert(fs.readFileSync(reportAbsPath(yVault, yDay), 'utf8').includes(`date: ${yDay}`), 'AL-6: catch-up date');
+      assert(agentLog.catchUpYesterday(yVault).wrote === false, 'AL-6: second catch-up is a no-op');
+      vaultSvc.setRoot(vault);
+      assert(!proposals.create(`00-系统/agent-日报/${dayKey(now, offset)}.md`, 'x', 'bad').ok, 'AL-6: agent cannot write reports via proposals');
+    }
   }
 
   // ipc.push is callable (no window in pure-Node → false)

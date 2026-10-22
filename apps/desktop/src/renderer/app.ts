@@ -501,6 +501,10 @@ async function init() {
   renderProposals();
   initAdvanced();
   void initWritePause();
+  $('btn-agent-report').addEventListener('click', async () => {
+    const res = await window.vaultApi.agentGenerateTodayReport();
+    els.agentAnswer.textContent = res.ok ? (res.message ?? (res.empty ? '今日暂无事件' : '已生成')) : (res.error ?? '生成失败');
+  });
 }
 
 // ---------------------------------------------------------------------------

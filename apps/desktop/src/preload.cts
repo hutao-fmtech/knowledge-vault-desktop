@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('vaultApi', {
   agentWechatPreview: (n: unknown) => ipcRenderer.invoke('agent-wechat-preview', n),
   agentApply: (id: unknown) => ipcRenderer.invoke('agent-apply', id),
   agentDiscard: (id: unknown) => ipcRenderer.invoke('agent-discard', id),
+  agentGenerateTodayReport: () => ipcRenderer.invoke('agent-generate-today-report'),
   writePauseStatus: () => ipcRenderer.invoke('write-pause-status'),
   writePauseSet: (paused: unknown) => ipcRenderer.invoke('write-pause-set', { paused: paused !== false }),
   onWritePauseState: (cb: Cb<unknown>) => { ipcRenderer.on('write-pause-state', (_e, st: unknown) => cb(st)); },

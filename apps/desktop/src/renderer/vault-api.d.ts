@@ -98,6 +98,7 @@ interface VaultApi {
   agentWechatPreview(n: string): Promise<ApiResult>;
   agentApply(id: string): Promise<ApiResult>;
   agentDiscard(id: string): Promise<ApiResult>;
+  agentGenerateTodayReport(): Promise<ApiResult & { empty?: boolean; rel?: string; abs?: string; bytes?: number; message?: string }>;
   writePauseStatus(): Promise<UiWritePauseState & ApiResult>;
   writePauseSet(paused: boolean): Promise<ApiResult & { state?: UiWritePauseState }>;
   onWritePauseState(cb: (st: UiWritePauseState) => void): void;
