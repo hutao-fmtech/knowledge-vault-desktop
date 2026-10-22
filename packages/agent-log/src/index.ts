@@ -311,3 +311,14 @@ export function createAgentLog(opts: AgentLogOptions): AgentLog {
 
   return { append, readDay, listDays, prune, dir };
 }
+
+export {
+  REPORT_DIR_REL,
+  REPORT_KIND,
+  buildDailyReport,
+  reportAbsPath,
+  reportRelPath,
+  writeDailyReport,
+  yesterdayKey,
+} from './report.js';
+export type { WriteReportResult } from './report.js';

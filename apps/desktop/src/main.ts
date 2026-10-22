@@ -853,6 +853,32 @@ ipcMain.handle('write-pause-set', (e, opts: { paused?: unknown } | null) => {
   return opts && opts.paused === false ? writePause.resume(origin) : writePause.pause(origin);
 });
 
+ipcMain.handle('agent-generate-today-report', async (e) => {
+  if (!isLocal(classifyIpcOrigin(e, mainWindow))) {
+    return { ok: false, code: 'REMOTE_FORBIDDEN', error: '生成日报只能在本机发起' };
+  }
+  if (!activeVault) return { ok: false, error: '未打开 vault' };
+  try {
+    const ctx = await getRuntimeCtx();
+    const agentLog = ctx.get('agentLog');
+    if (!agentLog) return { ok: false, error: 'agent-log 未挂载' };
+    const res = agentLog.generateToday(activeVault);
+    if (!res.ok) return { ok: false, error: res.error };
+    if (res.empty) return { ok: true, empty: true, message: '今日暂无 Agent 事件，未生成报告' };
+    return {
+      ok: true,
+      empty: false,
+      rel: res.rel,
+      abs: res.abs,
+      bytes: res.bytes,
+      message: `已生成今日报告：${res.rel}`,
+    };
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) };
+  }
+});
+
+
 // ---- Settings > Advanced IPC (local origin only for enable/policy/approval) ----
 
 ipcMain.handle('advanced-status', async () => {

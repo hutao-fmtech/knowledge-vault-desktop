@@ -31,12 +31,25 @@ Events: `proposal.created`, `proposal.applied`, `proposal.apply_failed`,
 fields are dropped; values that fail their validator or look like a secret are
 dropped.
 
+## Daily report (AL-6)
+
+`<vault>/00-系统/agent-日报/YYYY-MM-DD.md`, rebuilt purely from that day's
+`.vault/agent-log/*.jsonl` by `buildDailyReport(day, events)` (deterministic;
+paths as inline code, never `[[wikilinks]]`). Zero events → no file.
+
+- On vault open the plugin runs `catchUpYesterday` (write yesterday's report only
+  if missing), using Asia/Shanghai (UTC+8) day boundaries (AL-8).
+- Sidebar 「生成今日报告」 calls `generateToday` (idempotent overwrite).
+- Writes are app-owned (main process), not proposal→Apply; agents still cannot
+  read or write `00-系统/`.
+
 ## Behaviour
 
-- Best effort: `append` / `readDay` / `prune` never throw; failures go to `onWarn`.
+- Best effort: `append` / `readDay` / `prune` / report writes never throw; failures go to `onWarn`.
 - Corrupt / half-written lines are skipped on read.
 - `prune()` removes day files older than `retentionDays` (default 90).
-- Agents cannot read or write `.vault/` (`@kvd/vault` `FORBIDDEN_PREFIXES` + `isReadableRel`).
+- Agents cannot read or write `.vault/` or `00-系统/` (`@kvd/vault` `FORBIDDEN_PREFIXES` + `isReadableRel`).
+- Day files and reports use UTC+8 (`+08:00`) by default via the plugin.
 
 ## Public exports
 
