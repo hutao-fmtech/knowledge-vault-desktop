@@ -25,7 +25,7 @@ One JSON object per line, rebuilt from a field **allowlist**:
 `stale`, `error` (short code such as `stale`; free text becomes `other`), `app`.
 
 Events: `proposal.created`, `proposal.applied`, `proposal.apply_failed`,
-`proposal.rejected`, `proposal.expired`, `pause.on`, `pause.off`.
+`proposal.rejected`, `proposal.expired`, `apply.verify_failed` (Apply read-back hash mismatch, AL-12), `pause.on`, `pause.off`.
 
 **Never stored:** note content, model `summary`, prompts, API keys. Unknown
 fields are dropped; values that fail their validator or look like a secret are

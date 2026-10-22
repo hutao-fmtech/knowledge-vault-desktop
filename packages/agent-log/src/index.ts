@@ -29,6 +29,7 @@ export const EVENTS = Object.freeze([
   'proposal.apply_failed',
   'proposal.rejected',
   'proposal.expired',
+  'apply.verify_failed',
   'pause.on',
   'pause.off',
 ] as const);

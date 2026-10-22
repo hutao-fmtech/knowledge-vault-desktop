@@ -67,7 +67,7 @@ test('AL-1: one JSON line per event at <vault>/.vault/agent-log/YYYY-MM-DD.<devi
 
 test('AL-1: every event (incl. pause.on/off, apply_failed with error code) is accepted; unknown events dropped', () => {
   assert.deepEqual([...EVENTS], [
-    'proposal.created', 'proposal.applied', 'proposal.apply_failed', 'proposal.rejected', 'proposal.expired', 'pause.on', 'pause.off',
+    'proposal.created', 'proposal.applied', 'proposal.apply_failed', 'proposal.rejected', 'proposal.expired', 'apply.verify_failed', 'pause.on', 'pause.off',
   ]);
   const root = vault();
   const { log, warns } = mk(root);

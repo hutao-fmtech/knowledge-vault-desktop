@@ -7,6 +7,7 @@ import {
   resolveVaultPath,
   isReadableRel,
   FORBIDDEN_PREFIXES,
+  forbiddenTop,
   resolveLayoutWritePath,
   writeWechatLayoutHtml,
   readWechatLayoutHtml,
@@ -27,7 +28,7 @@ test('resolveVaultPath keeps paths inside the vault', () => {
 });
 
 test('never touches .obsidian/ or 00-系统/ or 90-附件/', () => {
-  assert.deepEqual(FORBIDDEN_PREFIXES, ['00-系统', '90-附件', '.obsidian', '.vault']);
+  assert.deepEqual(FORBIDDEN_PREFIXES, ['00-系统', '90-附件', '.obsidian', '.vault', '.git', '.trash']);
   assert.equal(isReadableRel('.obsidian/x'), false);
   assert.equal(isReadableRel('00-系统/x'), false);
   assert.equal(isReadableRel('90-附件/x'), false);
@@ -41,6 +42,30 @@ test('never touches .obsidian/ or 00-系统/ or 90-附件/', () => {
   assert.equal(resolveVaultPath(vault, '00-系统/agent-日报/2026-10-22.md').ok, false);
   assert.equal(isReadableRel('notes/.vault/x.md'), true, 'only the top-level .vault is reserved');
   assert.equal(resolveVaultPath(vault, '90-附件/公众号/layout/x.html').ok, false);
+});
+
+test('AL-11: .git/ and .trash/ refused like .obsidian/ (case, traversal, backslash, Windows quirks)', () => {
+  const bad = [
+    '.git/config', '.git', '.git/', '.trash/old.md', '.trash',
+    '.GIT/config', '.Git/HEAD', '.Trash/old.md', '.TRASH/x.md', '.OBSIDIAN/app.json', '.Vault/agent-log/x.jsonl',
+    'notes/../.git/config', '01-收件箱/../.trash/x.md', 'a/b/../../.git/hooks/pre-commit',
+    './.git/config', './/.git/config', '//.git/config',
+    '.git\\config', '.Trash\\x.md', 'notes\\..\\.git\\config',
+    '.git./config', '.git /config', '.trash ./x.md',
+  ];
+  for (const p of bad) {
+    assert.equal(resolveVaultPath(vault, p).ok, false, `write ${p}`);
+    assert.equal(isReadableRel(p), false, `read ${p}`);
+  }
+  for (const p of bad.filter((x) => !x.includes('..'))) assert.ok(forbiddenTop(p), `forbiddenTop ${p}`);
+  assert.equal(forbiddenTop('notes/../.git/config'), '.git');
+  const r = resolveVaultPath(vault, '.Git/config');
+  assert.ok(!r.ok && /禁止写入 \.git\//.test(r.error), 'same refusal message as .obsidian/');
+  // Only the top segment is reserved; look-alikes stay allowed.
+  for (const p of ['notes/.git/x.md', '.gitignore', '.github/x.md', 'trash/x.md', '.trashcan/x.md', '03-领域/.git.md']) {
+    assert.equal(isReadableRel(p), true, p);
+    assert.equal(resolveVaultPath(vault, p).ok, true, p);
+  }
 });
 
 test('sanitizeVaultName strips path separators', () => {
